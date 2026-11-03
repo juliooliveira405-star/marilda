@@ -1,0 +1,323 @@
+{
+  "project_name": "Madrila ERP",
+  "app_concept": "Plataforma de inteligência de custos e gestão de CMV (Custo da Mercadoria Vendida) para o restaurante 'Locale POA'. Automatiza a ingestão de planilhas VMarket e custos unitários Everest (PDF), apura o CMV mensal (Estoque Inicial + Compras - Estoque Final), classifica fornecedores pela Curva ABC com análise de Pareto, gera sugestões automáticas de reposição de estoque baseadas em delta de inventário, simula planos de economia financeira e oferece diagnósticos com IA avançada.",
+  "creator_credit": "Idealizado e criado por Julio Acauã",
+  "archetype": "THE PERFORMANCE PRO & SWISS PRECISION (Dashboard financeiro executivo e responsivo)",
+  "language": "pt-BR",
+  "currency": "BRL",
+  "number_format": "pt-BR (ex: R$ 145.280,50 e 29,4%)",
+  "date_format": "DD/MM/AAAA",
+  "theme_preference": "dark_primary_with_light_toggle",
+  "mobile_first_design": {
+    "viewport_priority": "Mobile browser optimized with bottom navigation sheet on touch devices and sticky quick-action bar",
+    "kpi_cards_mobile": "Horizontal scrollable chip strip on mobile (flex overflow-x-auto) and dense 2x2 grid on tablet, expanding to 4-column bento on desktop",
+    "tables_mobile": "Responsive card-view toggle or horizontally scrollable sticky-header financial tables with touch-friendly tap targets (min 44px)"
+  },
+  "colors": {
+    "surfaces": [
+      {
+        "name": "page",
+        "kind": "solid",
+        "bg": "#0B0F17",
+        "on_bg": "#F1F5F9",
+        "on_bg_muted": "#94A3B8"
+      },
+      {
+        "name": "sidebar",
+        "kind": "solid",
+        "bg": "#070A10",
+        "on_bg": "#F8FAFC",
+        "on_bg_muted": "#64748B"
+      },
+      {
+        "name": "panel",
+        "kind": "solid",
+        "bg": "#111827",
+        "on_bg": "#F9FAFB",
+        "on_bg_muted": "#9CA3AF"
+      },
+      {
+        "name": "card_subtle",
+        "kind": "solid",
+        "bg": "#161F30",
+        "on_bg": "#FFFFFF",
+        "on_bg_muted": "#94A3B8"
+      },
+      {
+        "name": "table_header",
+        "kind": "solid",
+        "bg": "#0F172A",
+        "on_bg": "#CBD5E1",
+        "on_bg_muted": "#64748B"
+      },
+      {
+        "name": "badge_target_ok",
+        "kind": "solid",
+        "bg": "#064E3B",
+        "on_bg": "#6EE7B7",
+        "on_bg_muted": "#A7F3D0"
+      },
+      {
+        "name": "badge_target_warning",
+        "kind": "solid",
+        "bg": "#78350F",
+        "on_bg": "#FDE68A",
+        "on_bg_muted": "#FEF3C7"
+      },
+      {
+        "name": "badge_target_danger",
+        "kind": "solid",
+        "bg": "#7F1D1D",
+        "on_bg": "#FCA5A5",
+        "on_bg_muted": "#FECACA"
+      },
+      {
+        "name": "badge_class_a",
+        "kind": "solid",
+        "bg": "#1E1B4B",
+        "on_bg": "#A5B4FC",
+        "on_bg_muted": "#C7D2FE"
+      },
+      {
+        "name": "badge_class_b",
+        "kind": "solid",
+        "bg": "#14532D",
+        "on_bg": "#86EFAC",
+        "on_bg_muted": "#BBF7D0"
+      },
+      {
+        "name": "badge_class_c",
+        "kind": "solid",
+        "bg": "#374151",
+        "on_bg": "#D1D5DB",
+        "on_bg_muted": "#E5E7EB"
+      },
+      {
+        "name": "status_zerado",
+        "kind": "solid",
+        "bg": "#450A0A",
+        "on_bg": "#F87171",
+        "on_bg_muted": "#FCA5A5"
+      },
+      {
+        "name": "status_baixou_forte",
+        "kind": "solid",
+        "bg": "#7C2D12",
+        "on_bg": "#FB923C",
+        "on_bg_muted": "#FDBA74"
+      },
+      {
+        "name": "status_baixou",
+        "kind": "solid",
+        "bg": "#713F12",
+        "on_bg": "#FBBF24",
+        "on_bg_muted": "#FDE68A"
+      },
+      {
+        "name": "status_estavel",
+        "kind": "solid",
+        "bg": "#064E3B",
+        "on_bg": "#34D399",
+        "on_bg_muted": "#6EE7B7"
+      },
+      {
+        "name": "status_subiu",
+        "kind": "solid",
+        "bg": "#1E3A8A",
+        "on_bg": "#60A5FA",
+        "on_bg_muted": "#93C5FD"
+      },
+      {
+        "name": "status_novo",
+        "kind": "solid",
+        "bg": "#581C87",
+        "on_bg": "#C084FC",
+        "on_bg_muted": "#E9D5FF"
+      },
+      {
+        "name": "inverse",
+        "kind": "solid",
+        "bg": "#F8FAFC",
+        "on_bg": "#0F172A",
+        "on_bg_muted": "#475569"
+      },
+      {
+        "name": "auth_side_banner",
+        "kind": "solid",
+        "bg": "#0A111E",
+        "on_bg": "#F8FAFC",
+        "on_bg_muted": "#94A3B8"
+      }
+    ],
+    "accent": "#F59E0B",
+    "on_accent": "#000000",
+    "accent_secondary": "#10B981",
+    "on_accent_secondary": "#000000",
+    "brand_emerald": "#059669",
+    "brand_amber": "#D97706",
+    "brand_crimson": "#DC2626",
+    "brand_indigo": "#6366F1"
+  },
+  "typography": {
+    "font_family_heading": "Outfit Variable, Manrope, sans-serif",
+    "font_family_sans": "Plus Jakarta Sans Variable, DM Sans, sans-serif",
+    "font_family_mono": "JetBrains Mono Variable, monospace",
+    "scale_px": {
+      "display": 56,
+      "h1": 40,
+      "h2": 30,
+      "h3": 22,
+      "h4": 18,
+      "body": 15,
+      "caption": 13
+    },
+    "letter_spacing": {
+      "headings": "tracking-tight",
+      "display": "tracking-tighter",
+      "labels": "tracking-wider uppercase text-xs"
+    }
+  },
+  "entry_surfaces": {
+    "/": "Sidebar ERP frame with KPI command-center header, monthly CMV status pills, and fast-action file parser bar",
+    "/login": "Branded split auth — left side Madrila ERP cost intelligence manifesto & Julio Acauã credit, right side Clerk card with dark styled container",
+    "/register": "Branded split register — left side Madrila ERP restaurant metrics showcase, right side Clerk sign-up card with role notice",
+    "/pending": "Centered executive review card with animated waiting pulse and contact Gerente prompt",
+    "/painel": "Executive Dashboard grid with 4 top KPI metrics, CMV % vs Target Gauge card, 12-month evolution chart, and alert feed",
+    "/cmv-estoque": "Dense monthly CMV financial table (EI + Compras - EF = CMV e CMV%) with inventory valuation chart",
+    "/fornecedores-abc": "Pareto Class A/B/C supplier breakdown table with accumulated share curve and monthly spend evolution",
+    "/sugestao-pedidos": "Predictive stock replenishment table with status badges (ZERADO, BAIXOU FORTE, etc.) and search filter toolbar",
+    "/economia": "Interactive Savings Simulator with CMV target slider, monthly horizon, supplier negotiation % and accumulated ROI projection",
+    "/insights-ia": "AI intelligence center with model selector (Claude Sonnet 4.5, Gemini 3 Flash, GPT-5.2), prompt presets and structured narrative outputs",
+    "/carregar-dados": "Multi-channel data ingestor supporting VMarket Excel/CSV, Everest Unit Cost PDF, Inventory Counts, and Manual Entry with instant preview",
+    "/administracao": "User permission matrix (Gerente, Alimentador, Chefe de Departamento, Pendente) and target CMV calibration (default 28-30%)"
+  },
+  "visual_enhancers": {
+    "card_style": "1px solid border with dark slate tint (border-slate-800/80), sharp rounded-xl corners, inner highlight border-t border-t-white/10",
+    "glassmorphism": "Used on top command bar and mobile floating bar: backdrop-blur-xl bg-slate-950/80 border-b border-slate-800/60",
+    "data_density": "High density financial grid with zebra-row hover highlights, monospace formatted currency values (BRL: R$ 0.000,00), right-aligned numbers",
+    "footer_credit": "Discreet top & bottom bar credit: 'Madrila ERP • Idealizado e criado por Julio Acauã' with amber accent indicator"
+  },
+  "navigation_structure": [
+    {
+      "id": "painel",
+      "label": "Painel Executivo",
+      "path": "/painel",
+      "icon": "LayoutDashboard",
+      "roles": ["Gerente", "Alimentador", "Chefe de Departamento"]
+    },
+    {
+      "id": "cmv_estoque",
+      "label": "CMV & Estoque",
+      "path": "/cmv-estoque",
+      "icon": "TrendingDown",
+      "roles": ["Gerente", "Alimentador", "Chefe de Departamento"]
+    },
+    {
+      "id": "fornecedores_abc",
+      "label": "Curva ABC Fornecedores",
+      "path": "/fornecedores-abc",
+      "icon": "PieChart",
+      "roles": ["Gerente", "Alimentador", "Chefe de Departamento"]
+    },
+    {
+      "id": "sugestao_pedidos",
+      "label": "Sugestão de Pedidos",
+      "path": "/sugestao-pedidos",
+      "icon": "ShoppingCart",
+      "roles": ["Gerente", "Alimentador", "Chefe de Departamento"]
+    },
+    {
+      "id": "economia",
+      "label": "Simulador de Economia",
+      "path": "/economia",
+      "icon": "Calculator",
+      "roles": ["Gerente", "Alimentador", "Chefe de Departamento"]
+    },
+    {
+      "id": "insights_ia",
+      "label": "Insights & Diagnóstico IA",
+      "path": "/insights-ia",
+      "icon": "Sparkles",
+      "roles": ["Gerente", "Alimentador", "Chefe de Departamento"]
+    },
+    {
+      "id": "carregar_dados",
+      "label": "Carregar Dados & PDFs",
+      "path": "/carregar-dados",
+      "icon": "UploadCloud",
+      "roles": ["Gerente", "Alimentador"]
+    },
+    {
+      "id": "administracao",
+      "label": "Administração & Metas",
+      "path": "/administracao",
+      "icon": "ShieldCheck",
+      "roles": ["Gerente"]
+    }
+  ],
+  "roles_and_permissions": {
+    "Gerente": "Acesso total: visualização, upload de planilhas/PDFs, gestão de usuários, calibração da meta de CMV e exclusão/edição de registros.",
+    "Alimentador": "Operador de dados: pode fazer upload de compras (VMarket), inventários mensais, custos Everest (PDF) e lançar faturamento manual.",
+    "Chefe de Departamento": "Consulta analítica: visualiza dashboards, relatórios CMV, ranking ABC, sugestão de pedidos e simulador de economia.",
+    "Pendente": "Usuário recém-cadastrado que aguarda aprovação e atribuição de cargo pelo Gerente na tela de Administração."
+  },
+  "ai_models_supported": [
+    { "id": "claude-sonnet-4-5", "name": "Claude Sonnet 4.5", "badge": "Profundo & Analítico", "provider": "Anthropic" },
+    { "id": "gemini-3-flash", "name": "Gemini 3 Flash", "badge": "Rápido & Direto", "provider": "Google" },
+    { "id": "gpt-5-2", "name": "GPT-5.2", "badge": "Estratégico ERP", "provider": "OpenAI" }
+  ],
+  "cmv_formula_reference": {
+    "formula": "CMV (R$) = Estoque Inicial (EI) + Compras do Mês - Estoque Final (EF)",
+    "cmv_percent": "CMV (%) = (CMV / Faturamento Bruto) * 100",
+    "target_range": "28.0% a 30.0% (Configurável nas preferências do Gerente)",
+    "status_rule": "CMV <= Meta Máx (30%) -> OK (Verde) | 30.1% a 33% -> Atenção (Amarelo) | > 33% -> Crítico (Vermelho)"
+  },
+  "reorder_status_badges": [
+    { "status": "ZERADO", "color": "#F87171", "bg": "#450A0A", "description": "Estoque zerou no fechamento - Reposição Imediata" },
+    { "status": "BAIXOU FORTE", "color": "#FB923C", "bg": "#7C2D12", "description": "Queda > 50% em relação ao estoque ideal" },
+    { "status": "BAIXOU", "color": "#FBBF24", "bg": "#713F12", "description": "Queda entre 20% e 50% - Comprar lote padrão" },
+    { "status": "ESTÁVEL", "color": "#34D399", "bg": "#064E3B", "description": "Estoque dentro da margem de segurança" },
+    { "status": "SUBIU", "color": "#60A5FA", "bg": "#1E3A8A", "description": "Estoque aumentou - Sem necessidade de compra" },
+    { "status": "NOVO", "color": "#C084FC", "bg": "#581C87", "description": "Item recém-cadastrado no inventário" }
+  ],
+  "data_test_ids": {
+    "sidebar": "erp-sidebar",
+    "role_badge": "user-role-badge",
+    "restaurant_selector": "restaurant-branch-select",
+    "kpi_compras_mes": "kpi-card-compras",
+    "kpi_faturamento": "kpi-card-faturamento",
+    "kpi_cmv_valor": "kpi-card-cmv-valor",
+    "kpi_cmv_percent": "kpi-card-cmv-percent",
+    "kpi_estoque_valor": "kpi-card-estoque-valor",
+    "cmv_table": "cmv-monthly-table",
+    "abc_table": "abc-suppliers-table",
+    "reorder_table": "reorder-suggestion-table",
+    "reorder_filter_input": "reorder-search-input",
+    "reorder_status_filter": "reorder-status-select",
+    "savings_slider_target": "savings-target-slider",
+    "savings_slider_months": "savings-horizon-slider",
+    "savings_slider_discount": "savings-discount-slider",
+    "savings_calc_result": "savings-calculated-total",
+    "ai_model_select": "ai-model-selector",
+    "ai_generate_btn": "ai-generate-insights-btn",
+    "ai_output_container": "ai-insights-content",
+    "upload_dropzone": "file-upload-dropzone",
+    "upload_type_select": "upload-type-selector",
+    "upload_submit_btn": "upload-process-btn",
+    "users_table": "admin-users-table",
+    "user_role_select": "admin-user-role-select",
+    "creator_credit_badge": "creator-credit-badge"
+  },
+  "instructions_to_main_agent": [
+    "1. Adicionar no layout principal (Sidebar, Header e Footer) o crédito obrigatório com destaque elegante: 'Madrila ERP • Idealizado e criado por Julio Acauã' (data-testid='creator-credit-badge').",
+    "2. Implementar autenticação com suporte a Email + Senha e compatibilidade com Clerk UI card mantendo a identidade visual escura de alto contraste (Dark theme corporativo elegante) e suporte ao modo claro.",
+    "3. Seedar dados realistas e completos para o restaurante 'Locale POA', incluindo histórico mensal de 12 meses (Faturamento, Estoque Inicial, Compras VMarket, Estoque Final, CMV em R$ e %, Curva ABC de fornecedores de A a C, e 30+ itens com sugestões de reposição).",
+    "4. Garantir que todas as telas e botões de ação possuam 'data-testid' conforme especificado em data_test_ids.",
+    "5. Na aba 'Carregar Dados & PDFs', permitir upload com drag-drop de arquivos .xlsx, .csv e .pdf (com extrator e parser simulado inteligente de custos Everest e compras VMarket) além de formulário manual para faturamento do mês com feedback sonner.",
+    "6. Na aba 'Simulador de Economia', permitir ao usuário simular a economia mensal e acumulada em Reais variando a meta de CMV (ex: de 34% para 29%), o prazo em meses (1 a 12 meses) e o percentual de renegociação com fornecedores Classe A com gráficos interativos Recharts.",
+    "7. Na aba 'Insights IA', disponibilizar seletor de modelos (Claude Sonnet 4.5, Gemini 3 Flash, GPT-5.2) e gerar diagnósticos estruturados em Português com recomendações práticas para a cozinha e bar do Locale POA.",
+    "8. Respeitar a tabela de permissões de papéis (Gerente, Alimentador, Chefe de Departamento, Pendente) com tela de bloqueio amigável para usuários Pendentes.",
+    "9. Formatação numérica e monetária estritamente no padrão brasileiro BRL (R$ 1.234,56 e percentuais 29,5%).",
+    "10. Otimização Mobile-First: menus colapsáveis em drawer/sheet em telas móveis e layout responsivo de alto desempenho."
+  ]
+}
