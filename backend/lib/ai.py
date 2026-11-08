@@ -19,13 +19,13 @@ SCHEMAS = {
     "compras": '{"rows":[{"date":"YYYY-MM-DD","fornecedor":"NOME FANTASIA","razao_social":"","numero":"","serie":"","valor":0.0}]}',
     "inventario": '{"month":"YYYY-MM ou null","rows":[{"item":"codigo","descricao":"","um":"KG/UNID/LITRO","qty":0.0,"grupo":""}]}',
     "custos": '{"rows":[{"item":"codigo","descricao":"","grupo":"","custo":0.0}]}',
-    "faturamento": '{"rows":[{"month":"YYYY-MM","valor":0.0,"parcial":false}]}',
+    "faturamento": '{"rows":[{"month":"YYYY-MM","valor":0.0,"parcial":false,"ate":"YYYY-MM-DD ou null"}]}',
 }
 KIND_HINTS = {
     "compras": "notas fiscais de compra / entradas de mercadoria. Uma linha por nota: data de emissão, fornecedor, número, valor total da nota.",
     "inventario": "contagem de inventário/estoque. Uma linha por item: código, descrição, unidade, quantidade em estoque, grupo.",
     "custos": "inventário valorizado (ex: Everest) com custo unitário médio. Uma linha por item: código, descrição, grupo/categoria e V. Custo Médio (custo unitário, NÃO o total).",
-    "faturamento": "faturamento/vendas. Some por mês e devolva uma linha por mês com o valor total vendido (realizado).",
+    "faturamento": "faturamento/vendas. Some por mês e devolva uma linha por mês com o valor total vendido (realizado); parcial=true se o mês não tem vendas até o último dia; ate = último dia com venda lançada.",
 }
 
 
@@ -91,7 +91,9 @@ async def generate_insight(model_key: str, context: str, focus: str, question: s
         f"{focus_text}\n"
         + (f"Pergunta do usuário: {question}\n" if question else "")
         + "Estruture em: ## Diagnóstico, ## Alertas, ## Ações recomendadas (com impacto estimado em R$ e prazo), ## Próximos passos. "
-        "Máximo ~450 palavras. Sinalize quando um dado parecer incompleto (ex: mês parcial, inventário com menos itens).\n\n"
+        "Máximo ~450 palavras. Regras: meta de CMV 28–30%; meses marcados 'aberto/incompleto' têm CMV % PARCIAL — sempre ressalve; "
+        "Jul/26 teve inventário consolidado com menos itens, o que distorce o CMV de Ago/26 — CMV baixo em Ago/Set NÃO é erro, trate com ressalva; "
+        "nunca afirme que os dados estão errados sem dizer qual dado falta.\n\n"
         f"DADOS:\n{context}"
     )
     return (await _run(chat, UserMessage(text=prompt))).strip()

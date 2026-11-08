@@ -17,7 +17,7 @@ DATA_COLLECTIONS = ["purchases", "inventory", "costs", "periods", "uploads", "in
 async def main(reset: bool) -> None:
     if reset:
         for c in DATA_COLLECTIONS:
-            await db[c].drop()
+            await db[c].delete_many({})  # explicit --reset only
     await ensure_indexes()
     if await db.uploads.find_one({"filename": WORKBOOK.name, "status": "concluido"}):
         print("Seed já aplicado — nada a fazer (use --reset para recarregar).")
@@ -25,17 +25,14 @@ async def main(reset: bool) -> None:
     batch = str(uuid.uuid4())
     tables = load_tables(WORKBOOK.read_bytes(), WORKBOOK.name)
     n, msg = await import_full(tables, batch, "sistema", "2026-10-18")
-    # Period status/notes exactly as in the workbook
+    # Completeness metadata exactly as in the workbook (status is computed from it)
     meta = {
-        "2026-07": ("fechado", "Inventário consolidado com menos itens — distorce o CMV de Ago"),
-        "2026-08": ("fechado", ""),
-        "2026-09": ("fechado", ""),
-        "2026-10": ("aberto", "Compras até 22/10, contagem 04–18/10, faturamento até ~24/10"),
+        "2026-07": {"obs": "Inventário consolidado com menos itens — distorce o CMV de Ago"},
+        "2026-10": {"obs": "Compras até 22/10, contagem 04–18/10, faturamento até ~24/10",
+                    "estoque_ate": "2026-10-18", "faturamento_parcial": True},
     }
-    for month, (status, obs) in meta.items():
-        await db.periods.update_one({"month": month}, {"$set": {"status": status, "obs": obs},
-                                                      "$setOnInsert": {"month": month, "faturamento": None, "faturamento_parcial": False}},
-                                    upsert=True)
+    for month, fields in meta.items():
+        await db.periods.update_one({"month": month}, {"$set": fields, "$setOnInsert": {"month": month}}, upsert=True)
     await db.settings.update_one({"_id": "global"}, {"$setOnInsert": {"empresa": "Locale POA", "cmv_meta_min": 0.28, "cmv_meta_max": 0.30}}, upsert=True)
     await db.uploads.insert_one({
         "id": batch, "kind": "completa", "filename": WORKBOOK.name, "month": None, "status": "concluido", "rows": n,

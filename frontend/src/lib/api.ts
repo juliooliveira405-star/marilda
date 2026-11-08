@@ -66,6 +66,17 @@ export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
   return handle<T>(res);
 }
 
+// Authenticated file download (e.g. Excel backup).
+export async function apiDownload(path: string, filename: string): Promise<void> {
+  const res = await fetch(`${BASE}${path}`, { headers: await authHeaders() });
+  if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(await res.blob());
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 // Human-readable message from an ApiError body ({detail: string | [{msg}]}).
 export function errorMessage(err: unknown, fallback = "Algo deu errado"): string {
   if (err instanceof ApiError) {

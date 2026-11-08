@@ -113,16 +113,20 @@ function UploadForm() {
   );
 }
 
+const EMPTY_PERIOD: PeriodIn = { faturamento: null, faturamento_parcial: false, faturamento_ate: null, estoque_ate: null, compras_completas: null, obs: "" };
+const COMPRAS_OPTS: Record<string, string> = { auto: "Automático (pela data da última nota)", sim: "Sim, compras do mês completas", nao: "Não, ainda faltam notas" };
+
 function ManualForm() {
   const qc = useQueryClient();
   const { data: periods } = usePeriods();
   const [month, setMonth] = useState("");
-  const [form, setForm] = useState<PeriodIn>({ faturamento: null, faturamento_parcial: false, status: "aberto", obs: "" });
+  const [form, setForm] = useState<PeriodIn>(EMPTY_PERIOD);
 
   const pick = (m: string) => {
     setMonth(m);
     const p: Period | undefined = periods?.find((x) => x.month === m);
-    setForm(p ? { faturamento: p.faturamento, faturamento_parcial: p.faturamento_parcial, status: p.status, obs: p.obs } : { faturamento: null, faturamento_parcial: false, status: "aberto", obs: "" });
+    setForm(p ? { faturamento: p.faturamento, faturamento_parcial: p.faturamento_parcial, faturamento_ate: p.faturamento_ate ?? null,
+      estoque_ate: p.estoque_ate ?? null, compras_completas: p.compras_completas ?? null, obs: p.obs } : EMPTY_PERIOD);
   };
 
   const save = useMutation({
@@ -133,9 +137,13 @@ function ManualForm() {
     },
     onError: (e) => toast.error(errorMessage(e, "Não foi possível salvar")),
   });
+  const comprasVal = form.compras_completas === null ? "auto" : form.compras_completas ? "sim" : "nao";
 
   return (
     <div className="grid max-w-2xl gap-4 sm:grid-cols-2">
+      <p className="text-xs text-slate-500 sm:col-span-2">
+        O mês fecha sozinho quando tiver inventário de fechamento + faturamento completo + compras do mês inteiro. Informe as datas de corte enquanto estiver parcial.
+      </p>
       <div>
         <Label className="mb-2 text-xs uppercase tracking-wider text-slate-400">Mês</Label>
         <Input type="month" data-testid="manual-month-input" value={month} onChange={(e) => pick(e.target.value)} />
@@ -146,19 +154,27 @@ function ManualForm() {
           onChange={(e) => setForm({ ...form, faturamento: e.target.value === "" ? null : Number(e.target.value) })} />
       </div>
       <div>
-        <Label className="mb-2 text-xs uppercase tracking-wider text-slate-400">Situação do mês</Label>
-        <Select value={form.status} onValueChange={(v: string) => setForm({ ...form, status: v as Period["status"] })}>
-          <SelectTrigger className="w-full" data-testid="manual-status-select"><SelectValue>{(v: string) => (v === "fechado" ? "Fechado" : "Aberto (parcial)")}</SelectValue></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="aberto">Aberto (parcial)</SelectItem>
-            <SelectItem value="fechado">Fechado</SelectItem>
-          </SelectContent>
-        </Select>
+        <Label className="mb-2 text-xs uppercase tracking-wider text-slate-400">Faturamento lançado até</Label>
+        <Input type="date" data-testid="manual-revenue-until-input" value={form.faturamento_ate ?? ""} onChange={(e) => setForm({ ...form, faturamento_ate: e.target.value || null })} />
       </div>
       <label className="flex items-center gap-2 self-end pb-2 text-sm text-slate-300">
         <Checkbox data-testid="manual-partial-checkbox" checked={form.faturamento_parcial} onCheckedChange={(c: boolean) => setForm({ ...form, faturamento_parcial: c })} />
         Faturamento parcial
       </label>
+      <div>
+        <Label className="mb-2 text-xs uppercase tracking-wider text-slate-400">Inventário contado até</Label>
+        <Input type="date" data-testid="manual-stock-until-input" value={form.estoque_ate ?? ""} onChange={(e) => setForm({ ...form, estoque_ate: e.target.value || null })} />
+        <p className="mt-1 text-[11px] text-slate-500">Vazio = inventário de fechamento.</p>
+      </div>
+      <div>
+        <Label className="mb-2 text-xs uppercase tracking-wider text-slate-400">Compras do mês completas?</Label>
+        <Select value={comprasVal} onValueChange={(v: string) => setForm({ ...form, compras_completas: v === "auto" ? null : v === "sim" })}>
+          <SelectTrigger className="w-full" data-testid="manual-purchases-complete-select"><SelectValue>{(v: string) => COMPRAS_OPTS[v]}</SelectValue></SelectTrigger>
+          <SelectContent>
+            {Object.entries(COMPRAS_OPTS).map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
       <div className="sm:col-span-2">
         <Label className="mb-2 text-xs uppercase tracking-wider text-slate-400">Observação</Label>
         <Input data-testid="manual-obs-input" value={form.obs} maxLength={300} onChange={(e) => setForm({ ...form, obs: e.target.value })} placeholder="Ex: faltam notas de 25 a 31" />

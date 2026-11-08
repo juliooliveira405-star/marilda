@@ -4,6 +4,7 @@ import calendar
 from collections import defaultdict
 from typing import Optional
 
+from lib.dates import now_local
 from lib.db import db
 from lib.parsers import month_label
 
@@ -17,6 +18,66 @@ async def get_settings() -> dict:
 
 async def cost_map() -> dict[str, float]:
     return {c["item"]: c["custo"] async for c in db.costs.find({}, {"_id": 0, "item": 1, "custo": 1})}
+
+
+def _br(d: Optional[str]) -> str:
+    return f"{d[8:10]}/{d[5:7]}" if d else ""
+
+
+def _month_range(months: set[str], current: str) -> list[str]:
+    """Continuous month list from the first month with data up to the current month."""
+    if not months:
+        return [current]
+    out, m = [], min(months | {current})
+    last = max(months | {current})
+    while m <= last:
+        out.append(m)
+        m = _next_month(m)
+    return out
+
+
+def completeness(month: str, notas: int, last_date: Optional[str], has_inv: bool, per: dict) -> dict:
+    y, mo = map(int, month.split("-"))
+    days = calendar.monthrange(y, mo)[1]
+    month_end = f"{month}-{days:02d}"
+    near_end = f"{month}-{max(days - 3, 1):02d}"
+    estoque_ate = per.get("estoque_ate")
+    fat_ate = per.get("faturamento_ate")
+    inv_final = has_inv and (not estoque_ate or estoque_ate >= f"{month}-{max(days - 2, 1):02d}")
+    fat = per.get("faturamento")
+    fat_ok = bool(fat) and not per.get("faturamento_parcial") and (not fat_ate or fat_ate >= month_end)
+    override = per.get("compras_completas")
+    compras_ok = notas > 0 and (override if override is not None else bool(last_date and last_date >= near_end))
+    pend = []
+    if not inv_final:
+        pend.append("inventário de fechamento")
+    if not compras_ok:
+        pend.append("compras")
+    if not fat_ok:
+        pend.append("faturamento")
+    alerta = None
+    if pend:
+        label = month_label(month)
+        parts = []
+        if has_inv:
+            parts.append(f"estoque até {_br(estoque_ate)}" if estoque_ate else ("estoque contado" if inv_final else "contagem parcial"))
+        if notas:
+            parts.append(f"compras até {_br(last_date)}")
+        if fat:
+            parts.append(f"faturamento até {_br(fat_ate)}" if fat_ate else ("faturamento parcial" if not fat_ok else "faturamento completo"))
+        missing = [p for p, ok in (("inventário de fechamento", has_inv), ("compras", notas > 0), ("faturamento", bool(fat))) if not ok]
+        if not parts:
+            alerta = f"{label} incompleto — aguardando inventário de fechamento, compras e faturamento do mês."
+        else:
+            alerta = f"{label} incompleto — " + " · ".join(parts)
+            if missing:
+                alerta += " · aguardando " + ", ".join(missing)
+            alerta += ". CMV % é parcial até o fechamento."
+    return {
+        "inventario_final": inv_final, "faturamento_completo": fat_ok, "compras_completas": compras_ok,
+        "pendencias": pend, "alerta_parcial": alerta, "status": "fechado" if not pend else "aberto",
+        "estoque_ate": estoque_ate, "faturamento_ate": fat_ate, "compras_ate": last_date,
+    }
 
 
 async def compute_months() -> list[dict]:
@@ -40,7 +101,9 @@ async def compute_months() -> list[dict]:
                 m["valor"] += q * c
 
     periods = {p["month"]: p async for p in db.periods.find({}, {"_id": 0})}
-    months = sorted(set(pmap) | set(inv) | set(periods))
+    current = now_local().strftime("%Y-%m")
+    data_months = set(pmap) | set(inv) | {m for m, p in periods.items() if p.get("faturamento")}
+    months = _month_range(data_months, current)
 
     out: list[dict] = []
     prev_stock: Optional[float] = None
@@ -50,18 +113,18 @@ async def compute_months() -> list[dict]:
         per = periods.get(month, {})
         compras = round(p.get("total", 0.0), 2)
         notas = p.get("notas", 0)
-        status = per.get("status", "aberto")
         inv_m = inv.get(month)
         estoque = round(inv_m["valor"], 2) if inv_m else None
+        comp = completeness(month, notas, p.get("last"), inv_m is not None, per)
+        status = comp["status"]
 
         y, mo = map(int, month.split("-"))
         days = calendar.monthrange(y, mo)[1]
         last_day = int(p["last"][8:10]) if p.get("last") else None
         projecao = None
-        if status != "fechado" and last_day and last_day < days:
+        if not comp["compras_completas"] and last_day and last_day < days:
             projecao = round(compras * days / last_day, 2)
 
-        # CMV only for consecutive months with both inventories
         consecutive = prev_month is not None and _next_month(prev_month) == month
         ei = prev_stock if consecutive else None
         cmv = round(ei + compras - estoque, 2) if (ei is not None and estoque is not None and notas) else None
@@ -69,13 +132,13 @@ async def compute_months() -> list[dict]:
         cmv_pct = round(cmv / fat, 4) if (cmv is not None and fat) else None
 
         out.append({
-            "month": month, "label": month_label(month), "status": status,
+            "month": month, "label": month_label(month),
             "compras": compras, "notas": notas, "ticket_medio": round(compras / notas, 2) if notas else 0,
-            "fornecedores": len(p.get("forn", [])), "compras_ate_dia": last_day if status != "fechado" else None,
+            "fornecedores": len(p.get("forn", [])), "compras_ate_dia": last_day if not comp["compras_completas"] else None,
             "compras_projecao": projecao, "faturamento": fat, "faturamento_parcial": bool(per.get("faturamento_parcial")),
             "itens_inventario": inv_m["itens"] if inv_m else 0, "itens_com_estoque": inv_m["com"] if inv_m else 0,
             "itens_valorizados": inv_m["val"] if inv_m else 0, "estoque_valor": estoque, "estoque_inicial": ei,
-            "cmv": cmv, "cmv_pct": cmv_pct, "obs": per.get("obs", ""),
+            "cmv": cmv, "cmv_pct": cmv_pct, "obs": per.get("obs", ""), **comp,
         })
         prev_stock, prev_month = estoque, month
     return out
@@ -155,7 +218,8 @@ def classify(ant: float, atu: float) -> tuple[str, float, float]:
     return s, var, pct
 
 
-async def compute_reorder(from_month: Optional[str] = None, to_month: Optional[str] = None) -> dict:
+async def compute_reorder(from_month: Optional[str] = None, to_month: Optional[str] = None, sector: Optional[str] = None) -> dict:
+    from lib.sectors import item_sector
     inv_months = sorted(await db.inventory.distinct("month"))
     if not to_month and inv_months:
         to_month = inv_months[-1]
@@ -175,6 +239,9 @@ async def compute_reorder(from_month: Optional[str] = None, to_month: Optional[s
         ref = rb or ra
         ant = (ra or {}).get("qty", 0) or 0
         atu = (rb or {}).get("qty", 0) or 0
+        setor = item_sector(ref.get("ggrupo", ""), ref.get("grupo", ""), ref.get("sgrupo", ""))
+        if sector and setor != sector:
+            continue
         status, var, pct = classify(ant, atu)
         custo = costs.get(code)
         rep = round(max(0.0, ant - max(atu, 0)) * custo, 2) if (custo and status in ("ZERADO", "BAIXOU FORTE")) else 0.0
@@ -184,10 +251,10 @@ async def compute_reorder(from_month: Optional[str] = None, to_month: Optional[s
             "item": code, "descricao": ref.get("descricao", ""), "um": ref.get("um", ""),
             "grupo": ref.get("sgrupo") or ref.get("grupo", ""), "qtd_anterior": round(ant, 3), "qtd_atual": round(atu, 3),
             "variacao": round(var, 3), "var_pct": round(pct, 1), "status": status, "sugestao": SUGESTOES[status],
-            "custo": round(custo, 4) if custo is not None else None, "valor_reposicao": rep,
+            "custo": round(custo, 4) if custo is not None else None, "valor_reposicao": rep, "setor": setor,
         })
     items.sort(key=lambda x: (STATUS_ORDER.index(x["status"]), -x["valor_reposicao"], x["variacao"]))
-    return {"from_month": from_month, "to_month": to_month, "counts": counts,
+    return {"from_month": from_month, "to_month": to_month, "counts": counts, "sector": sector,
             "valor_reposicao_total": round(total_rep, 2), "items": items}
 
 
@@ -210,7 +277,7 @@ def build_alerts(months: list[dict], settings: dict, suppliers: dict, reorder: d
             excess = (pct - mx) * (m["faturamento"] or 0)
             alerts.append({"level": "danger", "title": f"CMV {m['label']} em {_pct(pct)} — acima da meta",
                            "detail": f"Excesso de {_brl(excess)} sobre a meta de {_pct(mx)}."
-                                     + (" Mês ainda aberto: confirme o estoque final." if m["status"] != "fechado" else "")})
+                                     + (" CMV parcial — mês ainda incompleto." if m["status"] != "fechado" else "")})
         elif pct < mn - 0.05:
             alerts.append({"level": "warning", "title": f"CMV {m['label']} muito abaixo da meta ({_pct(pct)})",
                            "detail": "Pode indicar inventário inicial incompleto ou compras não lançadas — confira os dados."})
@@ -218,13 +285,16 @@ def build_alerts(months: list[dict], settings: dict, suppliers: dict, reorder: d
             alerts.append({"level": "success", "title": f"CMV {m['label']} em {_pct(pct)}",
                            "detail": f"Dentro ou abaixo da faixa {mn*100:.0f}–{_pct(mx)}."})
     for m in months:
+        if m["alerta_parcial"]:
+            alerts.append({"level": "warning", "title": f"{m['label']} aberto / incompleto", "detail": m["alerta_parcial"]})
+    for m in months:
         if m["notas"] and not m["faturamento"]:
             alerts.append({"level": "warning", "title": f"Faturamento de {m['label']} não lançado",
                            "detail": "Sem faturamento não é possível calcular o CMV %. Lance em Carregar Dados."})
         if m["itens_com_estoque"] and m["itens_valorizados"] < 0.9 * m["itens_com_estoque"]:
             falt = m["itens_com_estoque"] - m["itens_valorizados"]
-            alerts.append({"level": "info", "title": f"{falt} itens de {m['label']} sem custo unitário",
-                           "detail": "Envie o PDF/planilha de custos para valorizar 100% do estoque."})
+            alerts.append({"level": "warning", "title": f"{falt} itens de {m['label']} sem custo — CMV pode estar subestimado",
+                           "detail": "Envie o PDF/planilha de custos para valorizar 100% do estoque. Lista em Sugestão de Pedidos (coluna custo vazia)."})
     open_m = [m for m in months if m["compras_projecao"]]
     for m in open_m[-1:]:
         alerts.append({"level": "info", "title": f"Projeção de compras {m['label']}: {_brl(m['compras_projecao'])}",

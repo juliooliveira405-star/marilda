@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { UserButton, useAuth, useClerk } from "@clerk/react";
 import {
   Calculator,
@@ -13,12 +13,15 @@ import {
   TrendingDown,
   UploadCloud,
   Hourglass,
+  QrCode,
+  PackageMinus,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { setAuthTokenGetter } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
-import { useMe } from "@/lib/queries";
+import { useMe, useNotifications } from "@/lib/queries";
+import { toast } from "sonner";
 import type { Role } from "@/lib/types";
 import { CreditBadge, Skeleton } from "@/components/common";
 import { cn } from "@/lib/utils";
@@ -26,14 +29,17 @@ import { cn } from "@/lib/utils";
 export const VIEW_ROLES: Role[] = ["gerente", "alimentador", "chefe"];
 export const FEED_ROLES: Role[] = ["gerente", "alimentador"];
 export const ADMIN_ROLES: Role[] = ["gerente"];
+const IDLE_MS = 30 * 60 * 1000;
 
 const NAV: { to: string; label: string; icon: typeof LayoutDashboard; roles: Role[]; testId: string }[] = [
   { to: "/painel", label: "Painel Executivo", icon: LayoutDashboard, roles: VIEW_ROLES, testId: "nav-painel" },
-  { to: "/cmv-estoque", label: "CMV & Estoque", icon: TrendingDown, roles: VIEW_ROLES, testId: "nav-cmv-estoque" },
-  { to: "/fornecedores-abc", label: "Curva ABC Fornecedores", icon: PieChart, roles: VIEW_ROLES, testId: "nav-fornecedores" },
+  { to: "/cmv-estoque", label: "CMV & Estoque", icon: TrendingDown, roles: ADMIN_ROLES, testId: "nav-cmv-estoque" },
+  { to: "/fornecedores-abc", label: "Curva ABC Fornecedores", icon: PieChart, roles: ADMIN_ROLES, testId: "nav-fornecedores" },
   { to: "/sugestao-pedidos", label: "Sugestão de Pedidos", icon: ShoppingCart, roles: VIEW_ROLES, testId: "nav-sugestao" },
-  { to: "/economia", label: "Simulador de Economia", icon: Calculator, roles: VIEW_ROLES, testId: "nav-economia" },
-  { to: "/insights-ia", label: "Insights & Diagnóstico IA", icon: Sparkles, roles: VIEW_ROLES, testId: "nav-insights" },
+  { to: "/contagem-qr", label: "Contagem por QR Code", icon: QrCode, roles: VIEW_ROLES, testId: "nav-contagem-qr" },
+  { to: "/requisicoes", label: "Requisições", icon: PackageMinus, roles: VIEW_ROLES, testId: "nav-requisicoes" },
+  { to: "/economia", label: "Simulador de Economia", icon: Calculator, roles: ADMIN_ROLES, testId: "nav-economia" },
+  { to: "/insights-ia", label: "Insights & Diagnóstico IA", icon: Sparkles, roles: ADMIN_ROLES, testId: "nav-insights" },
   { to: "/carregar-dados", label: "Carregar Dados & PDFs", icon: UploadCloud, roles: FEED_ROLES, testId: "nav-carregar" },
   { to: "/administracao", label: "Administração & Metas", icon: ShieldCheck, roles: ADMIN_ROLES, testId: "nav-admin" },
 ];
@@ -52,7 +58,7 @@ function AuthBridge({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function NavList({ role, onNavigate }: { role: Role | undefined; onNavigate?: () => void }) {
+function NavList({ role, onNavigate, badge }: { role: Role | undefined; onNavigate?: () => void; badge: number }) {
   const items = NAV.filter((n) => role && n.roles.includes(role));
   return (
     <nav className="flex flex-col gap-1">
@@ -71,6 +77,9 @@ function NavList({ role, onNavigate }: { role: Role | undefined; onNavigate?: ()
         >
           <n.icon className="h-4 w-4 shrink-0" />
           <span>{n.label}</span>
+          {n.to === "/requisicoes" && badge > 0 && (
+            <span data-testid="nav-requisicoes-badge" className="ml-auto rounded-full bg-[#F87171] px-1.5 text-[10px] font-bold text-black">{badge}</span>
+          )}
         </NavLink>
       ))}
     </nav>
@@ -91,7 +100,7 @@ function Brand() {
   );
 }
 
-function SidebarFooter({ email, roleLabel }: { email?: string; roleLabel?: string }) {
+function SidebarFooter({ email, roleLabel, sector }: { email?: string; roleLabel?: string; sector?: string | null }) {
   const { signOut } = useClerk();
   return (
     <div className="space-y-3 border-t border-slate-800/80 pt-4">
@@ -99,7 +108,7 @@ function SidebarFooter({ email, roleLabel }: { email?: string; roleLabel?: strin
         <div className="min-w-0">
           <div className="truncate text-xs text-slate-300" data-testid="sidebar-user-email">{email ?? "—"}</div>
           <span data-testid="user-role-badge" className="mt-1 inline-flex rounded bg-amber/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber">
-            {roleLabel ?? "…"}
+            {roleLabel ?? "…"}{sector ? ` · ${sector}` : ""}
           </span>
         </div>
         <Button
@@ -152,11 +161,57 @@ export function RoleGate({ roles, children }: { roles: Role[]; children: ReactNo
   return <>{children}</>;
 }
 
+// Signs out after 30 min without interaction (also when the phone wakes after a long pause).
+function useIdleLogout() {
+  const { signOut } = useClerk();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const key = "madrila-last-activity";
+    const touch = () => localStorage.setItem(key, String(Date.now()));
+    touch();
+    const check = async () => {
+      if (Date.now() - Number(localStorage.getItem(key) || Date.now()) > IDLE_MS) {
+        localStorage.removeItem(key);
+        await signOut();
+        queryClient.clear();
+        toast.info("Sessão encerrada por inatividade (30 min). Entre novamente.");
+        navigate("/sign-in", { replace: true });
+      }
+    };
+    const events = ["pointerdown", "keydown", "scroll", "touchstart"] as const;
+    events.forEach((e) => window.addEventListener(e, touch, { passive: true }));
+    const onVis = () => void (document.visibilityState === "visible" && check());
+    document.addEventListener("visibilitychange", onVis);
+    const t = window.setInterval(() => void check(), 30_000);
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, touch));
+      document.removeEventListener("visibilitychange", onVis);
+      window.clearInterval(t);
+    };
+  }, [signOut, navigate]);
+}
+
+function useNotificationToasts(enabled: boolean) {
+  const { data } = useNotifications();
+  const prev = useRef<number | null>(null);
+  useEffect(() => {
+    if (!enabled || !data) return;
+    if (prev.current !== null && data.count > prev.current && data.items[0]) {
+      const n = data.items[0];
+      (n.priority === "urgente" ? toast.warning : toast.info)(n.message);
+    }
+    prev.current = data.count;
+  }, [data, enabled]);
+  return enabled ? (data?.count ?? 0) : 0;
+}
+
 function Shell() {
   const { data: me, isLoading, isError } = useMe();
   const [open, setOpen] = useState(false);
   const location = useLocation();
   const role = me?.role;
+  useIdleLogout();
+  const badge = useNotificationToasts(!!role && role !== "pendente");
 
   let content: ReactNode;
   if (isLoading) content = <div className="space-y-4"><Skeleton className="h-10 w-72" /><Skeleton className="h-32 w-full" /><Skeleton className="h-64 w-full" /></div>;
@@ -174,9 +229,9 @@ function Shell() {
       <aside data-testid="erp-sidebar" className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col justify-between border-r border-slate-800/80 bg-sidebar p-5 lg:flex">
         <div className="space-y-8">
           <Brand />
-          <NavList role={role} />
+          <NavList role={role} badge={badge} />
         </div>
-        <SidebarFooter email={me?.email} roleLabel={me?.role_label} />
+        <SidebarFooter email={me?.email} roleLabel={me?.role_label} sector={me?.sector} />
       </aside>
 
       <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-slate-800/60 bg-slate-950/80 px-4 py-3 backdrop-blur-xl lg:ml-64 lg:px-8">
@@ -199,9 +254,9 @@ function Shell() {
           <div className="flex h-full flex-col justify-between gap-6">
             <div className="space-y-8">
               <Brand />
-              <NavList role={role} onNavigate={() => setOpen(false)} />
+              <NavList role={role} badge={badge} onNavigate={() => setOpen(false)} />
             </div>
-            <SidebarFooter email={me?.email} roleLabel={me?.role_label} />
+            <SidebarFooter email={me?.email} roleLabel={me?.role_label} sector={me?.sector} />
           </div>
         </SheetContent>
       </Sheet>

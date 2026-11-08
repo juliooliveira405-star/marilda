@@ -9,3 +9,11 @@ def today_iso(tz: str | None = None) -> str:
     """Today's date as YYYY-MM-DD in `tz` (default: APP_TZ env, else UTC)."""
     zone = tz or os.environ.get("APP_TZ", "UTC")
     return datetime.now(ZoneInfo(zone)).strftime("%Y-%m-%d")
+
+
+LOCAL_TZ = "America/Sao_Paulo"
+
+
+def now_local() -> datetime:
+    """Current wall-clock time at the restaurant (Porto Alegre)."""
+    return datetime.now(ZoneInfo(LOCAL_TZ))

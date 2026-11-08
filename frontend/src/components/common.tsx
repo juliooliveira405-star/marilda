@@ -39,12 +39,12 @@ export function Panel({ children, className, title, action, testId }: { children
     <section
       data-testid={testId}
       className={cn(
-        "rounded-xl border border-slate-800/80 border-t-white/10 bg-panel p-4 md:p-5 animate-rise",
+        "min-w-0 rounded-xl border border-slate-800/80 border-t-white/10 bg-panel p-4 md:p-5 animate-rise",
         className,
       )}
     >
       {(title || action) && (
-        <div className="mb-4 flex items-center justify-between gap-2">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           {title && <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">{title}</h2>}
           {action}
         </div>

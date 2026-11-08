@@ -32,6 +32,13 @@ INDEXES: dict[str, list[IndexModel]] = {
     "periods": [IndexModel([("month", ASCENDING)], name="month", unique=True)],
     "uploads": [IndexModel([("id", ASCENDING)], name="id", unique=True), IndexModel([("created_at", DESCENDING)], name="created")],
     "insights": [IndexModel([("created_at", DESCENDING)], name="created")],
+    "invites": [IndexModel([("email", ASCENDING), ("status", ASCENDING)], name="email_status")],
+    "qr_labels": [IndexModel([("code", ASCENDING)], name="code", unique=True)],
+    "qr_aliases": [IndexModel([("alias", ASCENDING)], name="alias", unique=True)],
+    "count_entries": [IndexModel([("month", ASCENDING), ("created_at", DESCENDING)], name="month_created")],
+    "requisitions": [IndexModel([("id", ASCENDING)], name="id", unique=True), IndexModel([("created_at", DESCENDING)], name="created"),
+                     IndexModel([("sector", ASCENDING), ("status", ASCENDING)], name="sector_status")],
+    "audit": [IndexModel([("at", DESCENDING)], name="at")],
 }
 
 

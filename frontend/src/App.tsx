@@ -12,6 +12,8 @@ import Economia from "@/pages/Economia";
 import InsightsIA from "@/pages/InsightsIA";
 import CarregarDados from "@/pages/CarregarDados";
 import Administracao from "@/pages/Administracao";
+import ContagemQR from "@/pages/ContagemQR";
+import Requisicoes from "@/pages/Requisicoes";
 
 function Protected() {
   return (
@@ -32,11 +34,13 @@ export default function App() {
         <Route element={<Protected />}>
           <Route path="/" element={<Navigate to="/painel" replace />} />
           <Route path="/painel" element={<RoleGate roles={VIEW_ROLES}><Painel /></RoleGate>} />
-          <Route path="/cmv-estoque" element={<RoleGate roles={VIEW_ROLES}><CmvEstoque /></RoleGate>} />
-          <Route path="/fornecedores-abc" element={<RoleGate roles={VIEW_ROLES}><Fornecedores /></RoleGate>} />
+          <Route path="/cmv-estoque" element={<RoleGate roles={ADMIN_ROLES}><CmvEstoque /></RoleGate>} />
+          <Route path="/fornecedores-abc" element={<RoleGate roles={ADMIN_ROLES}><Fornecedores /></RoleGate>} />
           <Route path="/sugestao-pedidos" element={<RoleGate roles={VIEW_ROLES}><SugestaoPedidos /></RoleGate>} />
-          <Route path="/economia" element={<RoleGate roles={VIEW_ROLES}><Economia /></RoleGate>} />
-          <Route path="/insights-ia" element={<RoleGate roles={VIEW_ROLES}><InsightsIA /></RoleGate>} />
+          <Route path="/contagem-qr" element={<RoleGate roles={VIEW_ROLES}><ContagemQR /></RoleGate>} />
+          <Route path="/requisicoes" element={<RoleGate roles={VIEW_ROLES}><Requisicoes /></RoleGate>} />
+          <Route path="/economia" element={<RoleGate roles={ADMIN_ROLES}><Economia /></RoleGate>} />
+          <Route path="/insights-ia" element={<RoleGate roles={ADMIN_ROLES}><InsightsIA /></RoleGate>} />
           <Route path="/carregar-dados" element={<RoleGate roles={FEED_ROLES}><CarregarDados /></RoleGate>} />
           <Route path="/administracao" element={<RoleGate roles={ADMIN_ROLES}><Administracao /></RoleGate>} />
           <Route path="*" element={<Navigate to="/painel" replace />} />

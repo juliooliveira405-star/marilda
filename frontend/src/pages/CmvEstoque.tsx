@@ -1,5 +1,6 @@
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { EmptyState, PageHeader, Panel, Skeleton } from "@/components/common";
+import { PartialMonthAlerts, PartialTag } from "@/components/PartialAlerts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useDashboard } from "@/lib/queries";
 import { brl, cmvTone, compactBrl, pct, TONE_CLASSES } from "@/lib/format";
@@ -24,6 +25,7 @@ export default function CmvEstoque() {
         <EmptyState title="Sem meses apurados" detail="Envie inventários, compras e faturamento." />
       ) : (
         <div className="space-y-6">
+          <PartialMonthAlerts months={months} testId="cmv-partial-alerts" />
           <Panel title="Demonstrativo mensal" testId="cmv-monthly-table">
             <Table>
               <TableHeader>
@@ -38,7 +40,10 @@ export default function CmvEstoque() {
                   <TableRow key={m.month} data-testid={`cmv-row-${m.month}`} className="border-slate-800/70 hover:bg-slate-800/30">
                     <TableCell className="font-semibold">{m.label}</TableCell>
                     <TableCell>
-                      <span className={cn("text-xs", m.status === "fechado" ? "text-slate-400" : "text-amber")}>{m.status}</span>
+                      <span data-testid={`cmv-status-${m.month}`} title={m.alerta_parcial ?? ""} className={cn("text-xs", m.status === "fechado" ? "text-slate-400" : "text-amber")}>
+                        {m.status === "fechado" ? "fechado" : "incompleto"}
+                      </span>
+                      {m.pendencias.length > 0 && <div className="text-[10px] text-slate-500">falta: {m.pendencias.join(", ")}</div>}
                     </TableCell>
                     <TableCell className="num text-right">{brl(m.estoque_inicial)}</TableCell>
                     <TableCell className="num text-right">
@@ -52,7 +57,10 @@ export default function CmvEstoque() {
                       {m.faturamento_parcial && <div className="text-[10px] text-amber">parcial</div>}
                     </TableCell>
                     <TableCell className="text-right">
-                      <span className={cn("num rounded px-2 py-0.5 text-xs font-semibold", TONE_CLASSES[cmvTone(m.cmv_pct, max)])} data-testid={`cmv-pct-${m.month}`}>{pct(m.cmv_pct)}</span>
+                      <span className="inline-flex items-center gap-1">
+                        {m.cmv_pct !== null && <PartialTag month={m} />}
+                        <span className={cn("num rounded px-2 py-0.5 text-xs font-semibold", TONE_CLASSES[cmvTone(m.cmv_pct, max)])} data-testid={`cmv-pct-${m.month}`}>{pct(m.cmv_pct)}</span>
+                      </span>
                     </TableCell>
                     <TableCell className="num text-right text-xs text-slate-400">{m.itens_valorizados}/{m.itens_com_estoque}</TableCell>
                   </TableRow>
@@ -62,6 +70,7 @@ export default function CmvEstoque() {
             <div className="mt-3 space-y-1 text-xs text-slate-500">
               {months.filter((m) => m.obs).map((m) => <div key={m.month}>• {m.label}: {m.obs}</div>)}
               <div>• CMV só é calculado quando existem inventários de dois meses consecutivos.</div>
+              <div>• Um mês só fecha com inventário de fechamento + faturamento completo + compras do mês inteiro; até lá o CMV % é parcial.</div>
             </div>
           </Panel>
 

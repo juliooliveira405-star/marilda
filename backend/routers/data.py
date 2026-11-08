@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from lib.auth import FEEDERS, VIEWERS, require_role
 from lib.db import db
 from lib.ingest import KIND_LABELS, now_iso, process_upload
+from lib.sectors import audit
 from models.schemas import Period, PeriodIn, Upload
 
 router = APIRouter()
@@ -41,6 +42,7 @@ async def create_upload(
         "user_email": member.get("email", ""), "created_at": now_iso(),
     }
     await db.uploads.insert_one(dict(doc))
+    await audit(member, "upload", f"{KIND_LABELS[kind]}: {name}")
     task = asyncio.create_task(process_upload(doc["id"], kind, content, name, month or None, member.get("email", "")))
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
@@ -53,7 +55,7 @@ async def list_uploads(_: dict = Depends(require_role(*FEEDERS))):
 
 
 @router.delete("/uploads/{upload_id}", response_model=Upload)
-async def undo_upload(upload_id: str, _: dict = Depends(require_role("gerente"))):
+async def undo_upload(upload_id: str, member: dict = Depends(require_role("gerente"))):
     up = await db.uploads.find_one({"id": upload_id}, {"_id": 0})
     if not up:
         raise HTTPException(status_code=404, detail="Envio não encontrado")
@@ -62,6 +64,7 @@ async def undo_upload(upload_id: str, _: dict = Depends(require_role("gerente"))
     coll = db.purchases if up["kind"] == "compras" else db.inventory
     await coll.delete_many({"batch_id": upload_id})
     await db.uploads.update_one({"id": upload_id}, {"$set": {"status": "desfeito", "undoable": False}})
+    await audit(member, "upload desfeito", up["filename"])
     return {**up, "status": "desfeito", "undoable": False}
 
 
@@ -76,4 +79,5 @@ async def upsert_period(month: str, body: PeriodIn, member: dict = Depends(requi
         raise HTTPException(status_code=422, detail="Mês inválido (use AAAA-MM)")
     data = {**body.model_dump(), "month": month, "updated_by": member.get("email", "")}
     await db.periods.update_one({"month": month}, {"$set": data}, upsert=True)
+    await audit(member, "lançamento manual", f"{month}: faturamento {body.faturamento}")
     return data

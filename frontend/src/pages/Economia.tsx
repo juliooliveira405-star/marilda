@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Clock, PiggyBank, Target } from "lucide-react";
 import { PageHeader, Panel, Skeleton } from "@/components/common";
+import { PartialMonthAlerts } from "@/components/PartialAlerts";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useDashboard } from "@/lib/queries";
@@ -59,6 +60,12 @@ export default function Economia() {
       <PageHeader eyebrow="Planejamento" title="Simulador de Economia"
         subtitle="Quanto você economiza — e em quanto tempo — reduzindo o CMV até a meta e renegociando com os fornecedores classe A." />
 
+      <PartialMonthAlerts months={data?.months ?? []} className="mb-6" testId="savings-partial-alerts" />
+      {lastCmv && lastCmv.status !== "fechado" && (
+        <p className="-mt-3 mb-6 text-xs text-[#FDE68A]" data-testid="savings-partial-base-note">
+          O CMV atual usado como base ({lastCmv.label}) é parcial — a simulação muda quando o mês fechar.
+        </p>
+      )}
       <div className="grid gap-6 xl:grid-cols-[380px_1fr]">
         <Panel title="Parâmetros" testId="savings-params">
           <div className="space-y-6">

@@ -1,0 +1,17 @@
+{
+  "name": "Madrila ERP",
+  "short_name": "Madrila",
+  "description": "CMV, estoque, compras, contagem por QR e requisições — idealizado e criado por Julio Acauã.",
+  "start_url": "/painel",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0B0F17",
+  "theme_color": "#0B0F17",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
+    { "src": "/favicon-32x32.png", "sizes": "32x32", "type": "image/png" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

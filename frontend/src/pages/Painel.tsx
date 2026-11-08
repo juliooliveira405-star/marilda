@@ -2,12 +2,62 @@ import { Link } from "react-router-dom";
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis, ReferenceLine } from "recharts";
 import { Boxes, Receipt, Target, TrendingUp, UploadCloud, Wallet } from "lucide-react";
 import { AlertItem, EmptyState, KpiCard, PageHeader, Panel, Skeleton } from "@/components/common";
+import { PartialMonthAlerts, PartialTag } from "@/components/PartialAlerts";
 import { buttonVariants } from "@/components/ui/button";
-import { useDashboard, useMe } from "@/lib/queries";
+import { useDashboard, useMe, useOverview } from "@/lib/queries";
 import { brl, cmvTone, compactBrl, pct, TONE_CLASSES } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+function PainelSetor() {
+  const { data: me } = useMe();
+  const { data, isLoading } = useOverview();
+  const open = (data?.months ?? []).filter((m) => m.alerta_parcial);
+  return (
+    <div>
+      <PageHeader eyebrow={me?.sector ? `Setor ${me.sector}` : "Locale POA"} title="Painel"
+        subtitle="Situação dos meses, estoque e requisições do seu perfil." />
+      {isLoading ? <Skeleton className="h-40" /> : (
+        <div className="space-y-6">
+          <div className="space-y-2" data-testid="painel-partial-alerts">
+            {open.map((m) => (
+              <div key={m.month} data-testid={`painel-partial-alerts-${m.month}`} className="rounded-lg border border-[#FBBF24]/30 border-l-4 border-l-[#FBBF24] bg-[#78350F]/20 px-3 py-2.5 text-sm text-[#FDE68A]">
+                {m.alerta_parcial}
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <KpiCard testId="kpi-card-zerados" label={`Itens zerados${data?.sector ? ` · ${data.sector}` : ""}`} value={String(data?.zerados ?? 0)} icon={<Boxes className="h-4 w-4" />}
+              hint={<Link to="/sugestao-pedidos" className="text-amber underline-offset-2 hover:underline">Ver sugestão de pedidos</Link>} />
+            <KpiCard testId="kpi-card-baixou-forte" label="Baixou forte" value={String(data?.baixou_forte ?? 0)} icon={<TrendingUp className="h-4 w-4" />}
+              hint={<Link to="/requisicoes" className="text-amber underline-offset-2 hover:underline">Criar requisição</Link>} />
+            {data?.costs_visible && data.sector_stock.length > 0 && (
+              <KpiCard testId="kpi-card-sector-stock" label={`Estoque ${data.sector} ${data.sector_stock.at(-1)?.label}`} value={brl(data.sector_stock.at(-1)?.valor)}
+                icon={<Wallet className="h-4 w-4" />} hint={`${data.sector_stock.at(-1)?.itens} itens valorizados do setor`} />
+            )}
+          </div>
+          {data?.costs_visible && data.sector_stock.length > 1 && (
+            <Panel title={`Estoque valorizado — ${data.sector}`} testId="sector-stock-table">
+              <ul className="grid gap-2 sm:grid-cols-4">
+                {data.sector_stock.map((s) => (
+                  <li key={s.month} className="rounded-lg border border-slate-800 p-3 text-sm"><div className="text-xs text-slate-400">{s.label}</div><div className="num font-semibold">{brl(s.valor)}</div></li>
+                ))}
+              </ul>
+              <p className="mt-3 text-xs text-slate-500">CMV por setor será exibido quando as compras vierem detalhadas por item (hoje as notas têm só o valor total).</p>
+            </Panel>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Painel() {
+  const { data: me } = useMe();
+  if (!me) return null;
+  return me.role === "gerente" ? <PainelGerente /> : <PainelSetor />;
+}
+
+function PainelGerente() {
   const { data, isLoading, isError } = useDashboard();
   const { data: me } = useMe();
   const canFeed = me?.role === "gerente" || me?.role === "alimentador";
@@ -46,12 +96,15 @@ export default function Painel() {
         <>
           <div className="mb-3 flex flex-wrap gap-2" data-testid="month-status-pills">
             {months.map((m) => (
-              <span key={m.month} className={cn("rounded-full border border-slate-800 px-3 py-1 text-xs", m.status === "fechado" ? "text-slate-300" : "text-amber border-amber/40")}>
-                {m.label} · {m.status === "fechado" ? "fechado" : "aberto"}
+              <span key={m.month} data-testid={`month-chip-${m.month}`} title={m.alerta_parcial ?? "Mês fechado"}
+                className={cn("rounded-full border border-slate-800 px-3 py-1 text-xs", m.status === "fechado" ? "text-slate-300" : "text-amber border-amber/40")}>
+                {m.label} · {m.status === "fechado" ? "fechado" : "aberto / incompleto"}
                 {m.cmv_pct !== null && <span className={cn("ml-2 rounded px-1.5 py-0.5 text-[10px] font-semibold", TONE_CLASSES[cmvTone(m.cmv_pct, max)])}>{pct(m.cmv_pct)}</span>}
               </span>
             ))}
           </div>
+
+          <PartialMonthAlerts months={months} className="mb-4" testId="painel-partial-alerts" />
 
           <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-2 md:overflow-visible md:px-0 xl:grid-cols-5">
             <KpiCard testId="kpi-card-compras" label={`Compras ${last.label}`} value={brl(last.compras)} icon={<Receipt className="h-4 w-4" />}
@@ -59,9 +112,9 @@ export default function Painel() {
             <KpiCard testId="kpi-card-faturamento" label={`Faturamento ${last.label}`} value={brl(last.faturamento)} icon={<TrendingUp className="h-4 w-4" />}
               hint={last.faturamento_parcial ? "Parcial" : last.faturamento ? "Mês completo" : "Não lançado"} />
             <KpiCard testId="kpi-card-cmv-percent" label={`CMV % ${lastCmv?.label ?? ""}`} value={pct(lastCmv?.cmv_pct)} icon={<Target className="h-4 w-4" />}
-              tone={cmvTone(lastCmv?.cmv_pct, max)} hint={`Meta ${pct(min, 0)}–${pct(max, 0)}`} />
+              tone={cmvTone(lastCmv?.cmv_pct, max)} hint={<><PartialTag month={lastCmv} testId="kpi-cmv-partial-tag" />Meta {pct(min, 0)}–{pct(max, 0)}</>} />
             <KpiCard testId="kpi-card-cmv-valor" label={`CMV R$ ${lastCmv?.label ?? ""}`} value={brl(lastCmv?.cmv)} icon={<Wallet className="h-4 w-4" />}
-              hint={lastCmv ? `EI ${compactBrl(lastCmv.estoque_inicial ?? 0)} + compras − EF` : "Precisa de 2 inventários"} />
+              hint={lastCmv ? <><PartialTag month={lastCmv} />EI {compactBrl(lastCmv.estoque_inicial ?? 0)} + compras − EF</> : "Precisa de 2 inventários"} />
             <KpiCard testId="kpi-card-estoque-valor" label={`Estoque ${last.label}`} value={brl(last.estoque_valor)} icon={<Boxes className="h-4 w-4" />}
               hint={`${last.itens_valorizados}/${last.itens_com_estoque} itens valorizados`} />
           </div>

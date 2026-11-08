@@ -272,16 +272,18 @@ def _row_to_record(kind: str, row: list, cm: dict[str, int], title: str) -> Opti
         if not month:
             return None
         parcial = "*" in str(raw_mes or _cell(row, cm, "data") or "")
-        return {"month": month, "valor": valor, "parcial": parcial}
+        return {"month": month, "valor": valor, "parcial": parcial, "ate": d.isoformat() if d else None}
     return None
 
 
 def aggregate_faturamento(rows: list[dict]) -> list[dict]:
     agg: dict[str, dict] = {}
     for r in rows:
-        a = agg.setdefault(r["month"], {"month": r["month"], "valor": 0.0, "parcial": False})
+        a = agg.setdefault(r["month"], {"month": r["month"], "valor": 0.0, "parcial": False, "ate": None})
         a["valor"] += r["valor"]
         a["parcial"] = a["parcial"] or r.get("parcial", False)
+        if r.get("ate") and (a["ate"] is None or r["ate"] > a["ate"]):
+            a["ate"] = r["ate"]
     return list(agg.values())
 
 

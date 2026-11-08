@@ -81,11 +81,12 @@ async def store_custos(rows: list[dict], batch_id: str, ref: str) -> tuple[int, 
 
 async def store_faturamento(rows: list[dict], user_email: str) -> tuple[int, str]:
     for r in rows:
+        fields = {"faturamento": float(r["valor"]), "faturamento_parcial": bool(r.get("parcial")), "updated_by": user_email}
+        ate = parsers.to_date(r.get("ate"))
+        if ate:
+            fields["faturamento_ate"] = ate.isoformat()
         await db.periods.update_one(
-            {"month": r["month"]},
-            {"$set": {"faturamento": float(r["valor"]), "faturamento_parcial": bool(r.get("parcial")), "updated_by": user_email},
-             "$setOnInsert": {"month": r["month"], "status": "aberto", "obs": ""}},
-            upsert=True,
+            {"month": r["month"]}, {"$set": fields, "$setOnInsert": {"month": r["month"], "obs": ""}}, upsert=True,
         )
     if not rows:
         return 0, "Nenhum faturamento encontrado"
@@ -113,7 +114,7 @@ def _normalize_ai_rows(kind: str, rows: list[dict]) -> list[dict]:
             v = parsers.to_float(r.get("valor"))
             m = parsers.month_from_text(str(r.get("month") or ""))
             if v and m:
-                out.append({"month": m, "valor": v, "parcial": bool(r.get("parcial"))})
+                out.append({"month": m, "valor": v, "parcial": bool(r.get("parcial")), "ate": r.get("ate")})
     return out
 
 

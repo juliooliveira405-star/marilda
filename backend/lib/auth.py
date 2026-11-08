@@ -69,6 +69,21 @@ async def current_member(user: dict = Depends(require_user)) -> dict:
     if member is None or not member.get("role"):
         profile = await run_in_threadpool(_clerk_profile, uid)
         role = "gerente" if profile["is_admin"] else DEFAULT_ROLE
+        if role == DEFAULT_ROLE and profile["email"]:
+            # Invited by a gerente: take the role chosen in the invitation.
+            invite = await db.invites.find_one_and_update(
+                {"email": profile["email"].lower(), "status": "enviado", **IN_ENV}, {"$set": {"status": "aceito"}})
+            if invite and invite.get("role") in ROLES:
+                role = invite["role"]
+                if invite.get("sector"):
+                    await db.users.update_one({"user_id": uid}, {"$set": {"sector": invite["sector"]}}, upsert=True)
+        if role == DEFAULT_ROLE and profile["email"]:
+            invite = await db.invites.find_one_and_update(
+                {"email": profile["email"].lower(), "status": "enviado"}, {"$set": {"status": "aceito"}})
+            if invite and invite.get("role") in ROLES:
+                role = invite["role"]
+                if invite.get("sector"):
+                    await db.users.update_one({"user_id": uid}, {"$set": {"sector": invite["sector"]}}, upsert=True)
         await db.users.update_one({"user_id": uid, "role": {"$in": [None, ""]}}, {"$set": {"role": role}})
         member = await db.users.find_one_and_update(
             {"user_id": uid},
