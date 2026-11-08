@@ -222,7 +222,7 @@ function History() {
       <Table>
         <TableHeader>
           <TableRow className="border-slate-800 hover:bg-transparent">
-            {["", "Quando", "Tipo", "Arquivo", "Resultado", "Por", ""].map((h, i) => <TableHead key={i} className="text-xs uppercase text-slate-400">{h}</TableHead>)}
+            {[["status", ""], ["quando", "Quando"], ["tipo", "Tipo"], ["arquivo", "Arquivo"], ["resultado", "Resultado"], ["por", "Por"], ["acoes", ""]].map(([k, h]) => <TableHead key={k} className="text-xs uppercase text-slate-400">{h}</TableHead>)}
           </TableRow>
         </TableHeader>
         <TableBody>

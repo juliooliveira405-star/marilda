@@ -116,7 +116,6 @@ async def compute_months() -> list[dict]:
         inv_m = inv.get(month)
         estoque = round(inv_m["valor"], 2) if inv_m else None
         comp = completeness(month, notas, p.get("last"), inv_m is not None, per)
-        status = comp["status"]
 
         y, mo = map(int, month.split("-"))
         days = calendar.monthrange(y, mo)[1]

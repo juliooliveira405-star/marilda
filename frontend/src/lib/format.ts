@@ -55,3 +55,13 @@ export const TONE_CLASSES: Record<CmvTone, string> = {
   danger: "bg-[#7F1D1D] text-[#FCA5A5]",
   none: "bg-slate-800 text-slate-300",
 };
+
+export const STATUS_STYLES: Record<string, string> = {
+  ZERADO: "bg-[#450A0A] text-[#F87171]",
+  "BAIXOU FORTE": "bg-[#7C2D12] text-[#FB923C]",
+  BAIXOU: "bg-[#713F12] text-[#FBBF24]",
+  "ESTÁVEL": "bg-[#064E3B] text-[#34D399]",
+  SUBIU: "bg-[#1E3A8A] text-[#60A5FA]",
+  "SUBIU MUITO": "bg-[#1E1B4B] text-[#A5B4FC]",
+  NOVO: "bg-[#581C87] text-[#C084FC]",
+};

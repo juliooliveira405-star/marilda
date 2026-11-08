@@ -30,18 +30,42 @@ const STATUS: Record<ReqStatus, { label: string; cls: string }> = {
 const ALL = "todos";
 const invalidate = (qc: ReturnType<typeof useQueryClient>) => [qk.requisitions, qk.notifications].forEach((k) => void qc.invalidateQueries({ queryKey: k }));
 
+// Builds the printable page with DOM APIs only (textContent) — user text is never parsed as HTML.
 function printReq(r: Requisition) {
   const w = window.open("", "_blank");
   if (!w) return toast.error("Permita pop-ups para imprimir");
+  const d = w.document;
+  const el = (tag: string, text = "", style = "") => {
+    const n = d.createElement(tag);
+    n.textContent = text;
+    if (style) n.setAttribute("style", style);
+    return n;
+  };
+  d.title = `Requisição ${r.number}`;
+  d.body.setAttribute("style", "font-family:sans-serif;padding:24px");
   const approver = [...r.history].reverse().find((h) => h.action.startsWith("aprovada"));
-  const rows = r.items.map((i) => `<tr><td>${i.item}</td><td>${i.descricao}</td><td style="text-align:right">${qty(i.qty)}</td><td>${i.um}</td></tr>`).join("");
-  w.document.write(`<html><head><title>Requisição ${r.number}</title><style>body{font-family:sans-serif;padding:24px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ccc;padding:6px;font-size:13px;text-align:left}</style></head><body>
-    <h2>Madrila ERP · Requisição Nº ${r.number}</h2><p>Setor: <b>${r.sector}</b> · Prioridade: ${r.priority} · Status: <b>${STATUS[r.status].label}</b></p>
-    <p>Solicitante: ${r.requested_by} · Data: ${dateTimeBr(r.created_at)}</p>${r.note ? `<p>Obs: ${r.note}</p>` : ""}
-    <table><thead><tr><th>Item</th><th>Descrição</th><th>Qtd</th><th>UM</th></tr></thead><tbody>${rows}</tbody></table>
-    <p style="margin-top:32px">Aprovado por: ${approver ? `${approver.user} em ${dateTimeBr(approver.at)}` : "________________"}</p>
-    <p style="margin-top:32px">Assinatura: ______________________________</p><p style="font-size:11px;color:#777">Idealizado e criado por Julio Acauã</p></body></html>`);
-  w.document.close();
+  d.body.append(
+    el("h2", `Madrila ERP · Requisição Nº ${r.number}`),
+    el("p", `Setor: ${r.sector} · Prioridade: ${r.priority} · Status: ${STATUS[r.status].label}`),
+    el("p", `Solicitante: ${r.requested_by} · Data: ${dateTimeBr(r.created_at)}`),
+  );
+  if (r.note) d.body.append(el("p", `Obs: ${r.note}`));
+  const cell = "border:1px solid #ccc;padding:6px;font-size:13px;text-align:left";
+  const table = el("table", "", "width:100%;border-collapse:collapse");
+  const head = d.createElement("tr");
+  ["Item", "Descrição", "Qtd", "UM"].forEach((h) => head.append(el("th", h, cell)));
+  table.append(head);
+  r.items.forEach((i) => {
+    const tr = d.createElement("tr");
+    [i.item, i.descricao, qty(i.qty), i.um].forEach((v) => tr.append(el("td", v, cell)));
+    table.append(tr);
+  });
+  d.body.append(
+    table,
+    el("p", `Aprovado por: ${approver ? `${approver.user} em ${dateTimeBr(approver.at)}` : "________________"}`, "margin-top:32px"),
+    el("p", "Assinatura: ______________________________", "margin-top:32px"),
+    el("p", "Idealizado e criado por Julio Acauã", "font-size:11px;color:#777"),
+  );
   w.print();
 }
 
@@ -61,10 +85,15 @@ function Editor({ me, sectors, openSectors, editing, onDone }: { me: Me; sectors
   const qc = useQueryClient();
   const [sector, setSector] = useState(editing?.sector ?? (me.role === "chefe" ? me.sector ?? "" : ""));
   const [priority, setPriority] = useState<"normal" | "urgente">(editing?.priority ?? "normal");
-  const [lines, setLines] = useState<PickedLine[]>(editing?.items.map(({ item, descricao, um, qty: q, qr_code }) => ({ item, descricao, um, qty: q, qr_code })) ?? []);
+  const [lines, setLines] = useState<(PickedLine & { key: string })[]>(
+    editing?.items.map(({ item, descricao, um, qty: q, qr_code }) => ({ item, descricao, um, qty: q, qr_code, key: crypto.randomUUID() })) ?? [],
+  );
   const [note, setNote] = useState(editing?.note ?? "");
   const [raw, setRaw] = useState<string | null>(null);
-  const addLine = useCallback((l: PickedLine) => { setRaw(null); setLines((p) => [...p, l]); }, []);
+  const addLine = useCallback((l: PickedLine) => {
+    setRaw(null);
+    setLines((p) => [...p, { ...l, key: crypto.randomUUID() }]);
+  }, []);
 
   const save = useMutation({
     mutationFn: (body: RequisitionIn) => (editing ? apiPut<Requisition>(`/requisitions/${editing.id}`, body) : apiPost<Requisition>("/requisitions", body)),
@@ -78,7 +107,7 @@ function Editor({ me, sectors, openSectors, editing, onDone }: { me: Me; sectors
       else toast.error(errorMessage(e, "Não foi possível salvar"));
     },
   });
-  const body = (submit: boolean): RequisitionIn => ({ sector, priority, items: lines, note, submit, force: false });
+  const body = (submit: boolean): RequisitionIn => ({ sector, priority, items: lines.map(({ key: _k, ...l }) => l), note, submit, force: false });
   const chefLocked = me.role === "chefe";
 
   return (
@@ -121,7 +150,7 @@ function Editor({ me, sectors, openSectors, editing, onDone }: { me: Me; sectors
           {!lines.length ? <p className="text-xs text-slate-500">Busque itens, escaneie etiquetas ou gere pela Sugestão de Pedidos.</p> : (
             <ul className="max-h-80 divide-y divide-slate-800/70 overflow-y-auto rounded-lg border border-slate-800" data-testid="requisition-lines">
               {lines.map((l, i) => (
-                <li key={`${l.item}-${i}`} className="flex items-center gap-2 px-3 py-2 text-sm">
+                <li key={l.key} className="flex items-center gap-2 px-3 py-2 text-sm">
                   <span className="min-w-0 flex-1 truncate">{l.descricao}</span>
                   <Input data-testid={`requisition-line-qty-${i}`} inputMode="decimal" className="h-8 w-20" value={String(l.qty)}
                     onChange={(e) => { const v = Number(e.target.value.replace(",", ".")); setLines(lines.map((x, j) => (j === i ? { ...x, qty: v > 0 ? v : x.qty } : x))); }} />
@@ -180,9 +209,9 @@ function Card({ r, me, onEdit }: { r: Requisition; me: Me; onEdit: (r: Requisiti
       </button>
       {open && (
         <div className="mt-3 space-y-3 border-t border-slate-800 pt-3 animate-rise">
-          <ul className="space-y-1 text-xs">{r.items.map((i, k) => <li key={k} className="flex justify-between gap-2"><span className="truncate text-slate-300">{i.descricao}</span><span className="num shrink-0">{qty(i.qty)} {i.um}{i.custo !== null && <span className="ml-2 text-slate-500">{brl(i.custo * i.qty)}</span>}</span></li>)}</ul>
+          <ul className="space-y-1 text-xs">{r.items.map((i) => <li key={`${i.item}-${i.qr_code ?? ""}-${i.qty}`} className="flex justify-between gap-2"><span className="truncate text-slate-300">{i.descricao}</span><span className="num shrink-0">{qty(i.qty)} {i.um}{i.custo !== null && <span className="ml-2 text-slate-500">{brl(i.custo * i.qty)}</span>}</span></li>)}</ul>
           <ol className="space-y-1 border-l border-slate-800 pl-3 text-[11px] text-slate-500" data-testid={`requisition-history-${r.id}`}>
-            {r.history.map((h, k) => <li key={k}>{dateTimeBr(h.at)} · {h.user} · <span className="text-slate-300">{h.action}</span>{h.comment && ` — “${h.comment}”`}</li>)}
+            {r.history.map((h) => <li key={`${h.at}-${h.action}-${h.user}`}>{dateTimeBr(h.at)} · {h.user} · <span className="text-slate-300">{h.action}</span>{h.comment && ` — “${h.comment}”`}</li>)}
           </ol>
           {(g || (isOwner && ["rascunho", "devolvida"].includes(r.status))) && (
             <Input data-testid={`requisition-comment-${r.id}`} placeholder="Comentário (obrigatório para rejeitar, devolver ou excluir)" value={comment} onChange={(e) => setComment(e.target.value)} />
@@ -216,11 +245,11 @@ function WindowsEditor({ data }: { data: WindowsResponse }) {
   const toggle = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   return (
     <Panel title="Horários de aprovação automática (Alimentador)" testId="withdrawal-windows-editor"
-      action={<Button size="sm" variant="outline" data-testid="window-add-button" onClick={() => setRows([...rows, { id: "", sectors: [], days: [0, 1, 2, 3, 4, 5], start: "09:00", end: "11:00" }])}><Plus className="mr-1 h-4 w-4" />Horário</Button>}>
+      action={<Button size="sm" variant="outline" data-testid="window-add-button" onClick={() => setRows([...rows, { id: crypto.randomUUID(), sectors: [], days: [0, 1, 2, 3, 4, 5], start: "09:00", end: "11:00" }])}><Plus className="mr-1 h-4 w-4" />Horário</Button>}>
       <p className="mb-4 text-xs text-slate-500">Requisições de Alimentador feitas nesses horários são aprovadas sozinhas. Setor vazio = todos.</p>
       <div className="space-y-4">
         {rows.map((w, i) => (
-          <div key={i} className="space-y-3 rounded-lg border border-slate-800 p-3" data-testid={`window-row-${i}`}>
+          <div key={w.id} className="space-y-3 rounded-lg border border-slate-800 p-3" data-testid={`window-row-${i}`}>
             <div className="flex flex-wrap items-center gap-2">
               <Input type="time" className="w-28" value={w.start} data-testid={`window-start-${i}`} onChange={(e) => upd(i, { start: e.target.value })} />
               <span className="text-xs text-slate-500">até</span>
@@ -248,7 +277,7 @@ export default function Requisicoes() {
   const [fStatus, setFStatus] = useState(ALL);
   const [fPrio, setFPrio] = useState(ALL);
   const [fSector, setFSector] = useState(ALL);
-  const items = isError ? [] : (list ?? []);
+  const items = useMemo(() => (isError ? [] : (list ?? [])), [isError, list]);
 
   useEffect(() => {
     const id = params.get("abrir");

@@ -43,8 +43,9 @@ export default function ClerkAuthProvider({ children }: { children: React.ReactN
           if (!cancelled) setConfig(cfg);
           return;
         }
-      } catch {
-        /* retry below */
+      } catch (err) {
+        // backend restarting or offline — logged, then retried below
+        console.warn("Clerk config indisponível, tentando novamente", err);
       }
       if (cancelled) return;
       if (attempt >= 20) {

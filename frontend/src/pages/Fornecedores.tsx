@@ -13,7 +13,7 @@ export default function Fornecedores() {
   const { data, isLoading, isError } = useSuppliers();
   const [q, setQ] = useState("");
   const [classe, setClasse] = useState<(typeof CLASSES)[number]>("Todas");
-  const suppliers = isError ? [] : (data?.suppliers ?? []);
+  const suppliers = useMemo(() => (isError ? [] : (data?.suppliers ?? [])), [isError, data]);
   const filtered = useMemo(
     () => suppliers.filter((s) => (classe === "Todas" || s.classe === classe) && s.fornecedor.toLowerCase().includes(q.toLowerCase())),
     [suppliers, q, classe],

@@ -143,7 +143,7 @@ function PainelGerente() {
             </Panel>
             <Panel title="Alertas & sugestões" testId="painel-alerts">
               <ul className="max-h-[320px] space-y-2 overflow-y-auto pr-1">
-                {(data?.alerts ?? []).map((a, i) => <AlertItem key={i} alert={a} index={i} />)}
+                {(data?.alerts ?? []).map((a, i) => <AlertItem key={`${a.level}-${a.title}`} alert={a} index={i} />)}
               </ul>
             </Panel>
           </div>

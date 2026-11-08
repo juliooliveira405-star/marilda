@@ -1,0 +1,59 @@
+{
+  "iteration": 1,
+  "mode": "generate",
+  "summary": "All 6 acceptance-matrix criteria exercised via 6 named browser checks (no pure-API-only criteria, so no backend pytest lane was needed). All checks passed. One check (idle-logout-no-localstorage) was additionally re-run against the public preview URL per instructions.",
+  "passed": 6,
+  "failed": 0,
+  "bugs": [],
+  "action_items": [],
+  "retest_needed": false,
+  "checks": [
+    {
+      "criterion": "XSS fix: requisition print uses DOM textContent (no document.write)",
+      "name": "requisicoes-xss-print-safe",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "As gerente (Clerk ticket login), created requisition sector=Estoque, item=SALMAO qty=1, note='<img src=x onerror=alert(1)>', submitted. Opened the card and clicked Imprimir: a new popup window opened whose body text literally contains the raw note string '<img src=x onerror=alert(1)>' (confirmed via popup.locator('body').innerText()); no dialog/alert event fired (page.on('dialog') listener never triggered, asserted dialogFired===false). Screenshots: requisicoes-xss-print-safe-note-visible-as-text.png, requisicoes-xss-print-safe-popup-content.png."
+    },
+    {
+      "criterion": "Requisition editor lines use stable keys",
+      "name": "requisicoes-editor-stable-keys",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "In the Nova Requisição editor added 3 items (ABACATE qty1, ABACAXI PEROLA qty2, ABOBRINHA ITALIANA qty3), removed the middle row (requisition-line-remove-1). Remaining 2 rows verified: row0 still ABACATE, row1 is ABOBRINHA (not ABACAXI) -- no value shifting. Edited qty of row1 to 9 and verified row0 qty stayed '1' while row1 became '9'."
+    },
+    {
+      "criterion": "Time windows editor (gerente) stable keys",
+      "name": "requisicoes-windows-stable-keys",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Confirmed baseline exactly 2 existing owner windows before touching anything. Clicked + Horário twice (4 rows total), set window-start-3 to '13:37', removed window-remove-2 (first new row), and verified window-start-2 (the row that shifted into index 2) retained value '13:37' instead of resetting to the default '09:00'. Did NOT click Salvar horários -- real owner config (2 windows) left untouched."
+    },
+    {
+      "criterion": "Memoized lists still filter correctly",
+      "name": "memoized-lists-filter-correctly",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Sugestão de Pedidos: search 'abacate' narrowed reorder-row-* list to only rows containing 'abacate' (verified via allInnerTexts). Curva ABC: abc-filter-A narrowed abc-row-* count (<= total, >0), abc-filter-Todas restored original count. Requisições: requisition-filter-priority -> 'Urgente' applied without error. No console pageerror and no 'Maximum update depth' text captured across the whole flow."
+    },
+    {
+      "criterion": "Idle logout no longer uses localStorage",
+      "name": "idle-logout-no-localstorage",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "After gerente login, localStorage.getItem('madrila-last-activity') === null and Object.keys(localStorage) does not contain the key, both immediately after login and after navigating Painel -> Sugestão -> Requisições -> Painel. Re-ran the same check against the public preview URL (https://sheet-to-app-120--28flwr1y.preview.emergentagent.com) with identical passing result."
+    },
+    {
+      "criterion": "No regressions in role access",
+      "name": "role-access-no-regression",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Alimentador session: nav contains exactly nav-painel, nav-sugestao, nav-contagem-qr, nav-requisicoes, nav-carregar; nav-cmv-estoque/nav-fornecedores/nav-economia/nav-insights/nav-admin all have count 0; Sugestão de Pedidos body text contains no 'Custo unit.' / 'Reposição' columns. Gerente session: all 10 nav items visible, clicked through CMV, Fornecedores(ABC), Economia, Insights, Administração with zero page errors captured."
+    }
+  ],
+  "notes": [
+    "No criterion in the matrix was pure-API-only (all had a UI surface), so no backend pytest file was added this iteration per the artifact-selection rule.",
+    "Cleanup performed per briefing: deleted 1 test requisition and 1 audit row matching /clerk_test/ created during checks; remaining db.requisitions count is 1 (genuine seed/owner data, left untouched, so counter was not reset).",
+    "Clerk sign-in tickets are single-use and short-lived (~10 min) -- a fresh ticket was minted via tests/clerk_tokens.py before each check run; this is expected operational overhead, not a bug."
+  ]
+}

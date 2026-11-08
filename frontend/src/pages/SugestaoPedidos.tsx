@@ -4,13 +4,13 @@ import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Download, FilePlus2, Loader2 } from "lucide-react";
 import { apiPost, errorMessage } from "@/lib/api";
-import { EmptyState, PageHeader, Panel, Skeleton, StatusBadge, STATUS_STYLES } from "@/components/common";
+import { EmptyState, PageHeader, Panel, Skeleton, StatusBadge } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useMe, useOverview, useReorder } from "@/lib/queries";
-import { brl, monthLabel, qty } from "@/lib/format";
+import { brl, monthLabel, qty, STATUS_STYLES } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ReorderItem, Requisition, RequisitionIn } from "@/lib/types";
 const SECTOR_FILTER = ["Todos", "Cozinha", "Bar", "Salão", "Quiosque", "Estoque"];
@@ -61,7 +61,7 @@ export default function SugestaoPedidos() {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<string>(ALL);
 
-  const items = isError ? [] : (data?.items ?? []);
+  const items = useMemo(() => (isError ? [] : (data?.items ?? [])), [isError, data]);
   const filtered = useMemo(
     () =>
       items.filter(

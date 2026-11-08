@@ -26,9 +26,7 @@ import type { Role } from "@/lib/types";
 import { CreditBadge, Skeleton } from "@/components/common";
 import { cn } from "@/lib/utils";
 
-export const VIEW_ROLES: Role[] = ["gerente", "alimentador", "chefe"];
-export const FEED_ROLES: Role[] = ["gerente", "alimentador"];
-export const ADMIN_ROLES: Role[] = ["gerente"];
+import { ADMIN_ROLES, FEED_ROLES, VIEW_ROLES } from "@/lib/roles";
 const IDLE_MS = 30 * 60 * 1000;
 
 const NAV: { to: string; label: string; icon: typeof LayoutDashboard; roles: Role[]; testId: string }[] = [
@@ -162,16 +160,18 @@ export function RoleGate({ roles, children }: { roles: Role[]; children: ReactNo
 }
 
 // Signs out after 30 min without interaction (also when the phone wakes after a long pause).
+// The last-activity time lives only in memory — nothing is persisted in the browser.
 function useIdleLogout() {
   const { signOut } = useClerk();
   const navigate = useNavigate();
   useEffect(() => {
-    const key = "madrila-last-activity";
-    const touch = () => localStorage.setItem(key, String(Date.now()));
-    touch();
+    let last = Date.now();
+    const touch = () => {
+      last = Date.now();
+    };
     const check = async () => {
-      if (Date.now() - Number(localStorage.getItem(key) || Date.now()) > IDLE_MS) {
-        localStorage.removeItem(key);
+      if (Date.now() - last > IDLE_MS) {
+        last = Date.now();
         await signOut();
         queryClient.clear();
         toast.info("Sessão encerrada por inatividade (30 min). Entre novamente.");

@@ -1,7 +1,8 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { Show } from "@clerk/react";
 import ClerkAuthProvider from "@/components/auth/ClerkAuthProvider";
-import AppLayout, { ADMIN_ROLES, FEED_ROLES, RoleGate, VIEW_ROLES } from "@/components/AppLayout";
+import AppLayout, { RoleGate } from "@/components/AppLayout";
+import { ADMIN_ROLES, FEED_ROLES, VIEW_ROLES } from "@/lib/roles";
 import { Toaster } from "@/components/ui/sonner";
 import { SignInPage, SignUpPage } from "@/pages/Auth";
 import Painel from "@/pages/Painel";

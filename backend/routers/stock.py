@@ -10,7 +10,6 @@ from lib.auth import VIEWERS, require_role
 from lib.dates import now_local
 from lib.db import db
 from lib.ingest import now_iso
-from lib.metrics import cost_map
 from lib.parsers import month_label, norm
 from lib.sectors import SECTORS, audit
 from models.schemas import (

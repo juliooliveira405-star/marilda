@@ -266,8 +266,8 @@ function AuditPanel() {
         catch (e) { toast.error(errorMessage(e, "Falha no backup")); } finally { setBusy(false); }
       }}>{busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Download className="mr-1 h-4 w-4" />}Exportar backup completo</Button>}>
       <ul className="max-h-96 divide-y divide-slate-800/70 overflow-y-auto text-xs" data-testid="audit-list">
-        {(isError ? [] : (data ?? [])).map((a, i) => (
-          <li key={i} className="flex flex-col gap-0.5 py-2 sm:flex-row sm:gap-3">
+        {(isError ? [] : (data ?? [])).map((a) => (
+          <li key={`${a.at}-${a.user}-${a.action}`} className="flex flex-col gap-0.5 py-2 sm:flex-row sm:gap-3">
             <span className="shrink-0 text-slate-500">{new Date(a.at).toLocaleString("pt-BR")}</span>
             <span className="shrink-0 text-slate-300">{a.user}</span>
             <span className="text-amber">{a.action}</span>
