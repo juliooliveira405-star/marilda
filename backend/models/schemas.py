@@ -449,10 +449,27 @@ class Notification(BaseModel):
     at: str
 
 
+class ValidadeAlert(BaseModel):
+    code: str
+    item: str
+    descricao: str
+    validade: str
+    dias: int
+    sector: str
+    qty: float
+    um: str = ""
+    label_id: str = ""
+
+
+class BaixaIn(BaseModel):
+    motivo: Literal["consumido", "descartado", "transferido"]
+
+
 class Notifications(BaseModel):
     count: int
     items: list[Notification]
     meses: list[str] = []
+    validades: list[ValidadeAlert] = []
 
 
 # ---------- CMV por setor ----------
@@ -482,6 +499,7 @@ class SupplierSector(BaseModel):
     total: float
     sector: Optional[str] = None
     auto: bool = False
+    fonte: str = ""
 
 
 class SupplierSectorIn(BaseModel):

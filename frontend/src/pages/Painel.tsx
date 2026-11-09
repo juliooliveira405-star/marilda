@@ -1,9 +1,13 @@
 import { Link } from "react-router-dom";
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis, ReferenceLine } from "recharts";
-import { Boxes, Receipt, Target, TrendingUp, UploadCloud, Wallet } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+import { Boxes, FileDown, Loader2, Receipt, Target, TrendingUp, UploadCloud, Wallet } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { apiDownload, errorMessage } from "@/lib/api";
 import { AlertItem, EmptyState, KpiCard, PageHeader, Panel, Skeleton } from "@/components/common";
 import { PartialMonthAlerts, PartialTag } from "@/components/PartialAlerts";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { useDashboard, useMe, useOverview, useSectorCmv } from "@/lib/queries";
 import { brl, cmvTone, compactBrl, pct, TONE_CLASSES } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -69,6 +73,34 @@ export default function Painel() {
   return me.role === "gerente" ? <PainelGerente /> : <PainelSetor />;
 }
 
+function MonthlyReportButton({ months }: { months: { month: string; label: string }[] }) {
+  const withData = months.filter((m) => m.month);
+  const [month, setMonth] = useState(withData.length > 1 ? withData[withData.length - 2].month : (withData.at(-1)?.month ?? ""));
+  const [busy, setBusy] = useState(false);
+  const download = async () => {
+    setBusy(true);
+    try {
+      await apiDownload(`/reports/monthly?month=${month}`, `madrila_relatorio_${month}.pdf`);
+      toast.success("Relatório mensal baixado");
+    } catch (e) {
+      toast.error(errorMessage(e, "Falha ao gerar o relatório"));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex items-center gap-1.5" data-testid="monthly-report">
+      <Select value={month} onValueChange={(v: string) => setMonth(v)}>
+        <SelectTrigger size="sm" className="w-28" data-testid="monthly-report-month"><SelectValue>{(v: string) => withData.find((m) => m.month === v)?.label ?? v}</SelectValue></SelectTrigger>
+        <SelectContent>{withData.map((m) => <SelectItem key={m.month} value={m.month}>{m.label}</SelectItem>)}</SelectContent>
+      </Select>
+      <Button size="sm" variant="outline" data-testid="monthly-report-button" disabled={busy || !month} onClick={() => void download()}>
+        {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FileDown className="mr-1 h-4 w-4" />}Relatório PDF
+      </Button>
+    </div>
+  );
+}
+
 function PainelGerente() {
   const { data, isLoading, isError } = useDashboard();
   const { data: me } = useMe();
@@ -92,11 +124,14 @@ function PainelGerente() {
         title="Painel Executivo"
         subtitle="Compras, faturamento, estoque e CMV calculados automaticamente a partir dos dados enviados."
         actions={
-          canFeed && (
-            <Link to="/carregar-dados" className={buttonVariants({ size: "sm" })} data-testid="painel-upload-link">
-              <UploadCloud className="mr-1 h-4 w-4" /> Carregar dados
-            </Link>
-          )
+          <>
+            {months.length > 0 && <MonthlyReportButton months={months.map((m) => ({ month: m.month, label: m.label }))} />}
+            {canFeed && (
+              <Link to="/carregar-dados" className={buttonVariants({ size: "sm" })} data-testid="painel-upload-link">
+                <UploadCloud className="mr-1 h-4 w-4" /> Carregar dados
+              </Link>
+            )}
+          </>
         }
       />
 

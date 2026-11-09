@@ -43,13 +43,17 @@ def guess_supplier_sector(fornecedor: str, razao: str = "") -> str | None:
     return None
 
 
-async def supplier_sector_map() -> dict[str, tuple[str | None, bool]]:
-    """fornecedor → (sector, auto). Manual choice (db.supplier_sectors) beats the keyword guess."""
-    manual = {d["fornecedor"]: d.get("sector") async for d in db.supplier_sectors.find({}, {"_id": 0})}
-    out: dict[str, tuple[str | None, bool]] = {}
+async def supplier_sector_map() -> dict[str, tuple[str | None, str]]:
+    """fornecedor → (sector, fonte). fonte: manual (Gerente) > ia (sugestão IA) > regra (palavra-chave) > "" (sem setor)."""
+    saved = {d["fornecedor"]: d async for d in db.supplier_sectors.find({}, {"_id": 0})}
+    out: dict[str, tuple[str | None, str]] = {}
     for r in await db.purchases.aggregate([{"$group": {"_id": "$fornecedor", "rs": {"$first": "$razao_social"}}}]).to_list(None):
         f = r["_id"]
-        out[f] = (manual[f], False) if f in manual else (guess_supplier_sector(f, r.get("rs") or ""), True)
+        if f in saved:
+            out[f] = (saved[f].get("sector"), saved[f].get("source", "manual"))
+        else:
+            g = guess_supplier_sector(f, r.get("rs") or "")
+            out[f] = (g, "regra" if g else "")
     return out
 
 

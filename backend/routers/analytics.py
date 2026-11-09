@@ -6,7 +6,7 @@ import openpyxl
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from lib import metrics
+from lib import ai, metrics
 from lib.ai import AI_MODELS, generate_insight
 from lib.auth import VIEWERS, require_role
 from lib.db import db
@@ -86,17 +86,39 @@ async def supplier_sectors(_: dict = Depends(manager)):
     rows = await db.purchases.aggregate([{"$group": {"_id": "$fornecedor", "t": {"$sum": "$valor"}, "rs": {"$first": "$razao_social"}}},
                                          {"$sort": {"t": -1}}]).to_list(None)
     return [{"fornecedor": r["_id"], "razao_social": r.get("rs") or "", "total": round(r["t"], 2),
-             "sector": smap.get(r["_id"], (None, True))[0], "auto": smap.get(r["_id"], (None, True))[1]} for r in rows]
+             "sector": smap.get(r["_id"], (None, ""))[0], "auto": smap.get(r["_id"], (None, ""))[1] != "manual",
+             "fonte": smap.get(r["_id"], (None, ""))[1]} for r in rows]
+
+
+@router.post("/suppliers/sectors/suggest", response_model=list[SupplierSector])
+async def suggest_supplier_sectors(member: dict = Depends(manager)):
+    """AI suggestion for every supplier still without sector — saved as fonte "ia" so the Gerente can confirm or change."""
+    rows = [r for r in await supplier_sectors(member) if not r["sector"]]
+    if rows:
+        try:
+            sug = await ai.suggest_supplier_sectors(rows)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"A IA não respondeu agora — tente de novo ({str(exc)[:80]})")
+        n = 0
+        for r in rows:
+            sec = sug.get(r["fornecedor"])
+            if sec in SECTORS:
+                await db.supplier_sectors.update_one({"fornecedor": r["fornecedor"]},
+                                                     {"$set": {"fornecedor": r["fornecedor"], "sector": sec, "source": "ia"}}, upsert=True)
+                n += 1
+        await audit(member, "fornecedor → setor (sugestão IA)", f"{n} de {len(rows)} fornecedores")
+    return await supplier_sectors(member)
 
 
 @router.put("/suppliers/sectors", response_model=SupplierSector)
 async def set_supplier_sector(body: SupplierSectorIn, member: dict = Depends(manager)):
     if body.sector is not None and body.sector not in SECTORS:
         raise HTTPException(status_code=422, detail="Setor inválido")
-    await db.supplier_sectors.update_one({"fornecedor": body.fornecedor}, {"$set": {"fornecedor": body.fornecedor, "sector": body.sector}}, upsert=True)
+    await db.supplier_sectors.update_one({"fornecedor": body.fornecedor},
+                                         {"$set": {"fornecedor": body.fornecedor, "sector": body.sector, "source": "manual"}}, upsert=True)
     await audit(member, "fornecedor → setor", f"{body.fornecedor}: {body.sector or 'não alocado'}")
     tot = await db.purchases.aggregate([{"$match": {"fornecedor": body.fornecedor}}, {"$group": {"_id": None, "t": {"$sum": "$valor"}}}]).to_list(None)
-    return {"fornecedor": body.fornecedor, "total": round(tot[0]["t"], 2) if tot else 0.0, "sector": body.sector, "auto": False}
+    return {"fornecedor": body.fornecedor, "total": round(tot[0]["t"], 2) if tot else 0.0, "sector": body.sector, "auto": False, "fonte": "manual"}
 
 
 @router.get("/reorder", response_model=ReorderResponse)

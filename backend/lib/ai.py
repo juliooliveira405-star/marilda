@@ -117,3 +117,22 @@ async def generate_insight(model_key: str, context: str, focus: str, question: s
         f"DADOS:\n{context}"
     )
     return (await _run(chat, UserMessage(text=prompt))).strip()
+
+
+async def suggest_supplier_sectors(rows: list[dict]) -> dict[str, str]:
+    """rows: [{fornecedor, razao_social, total}] → {fornecedor: setor} (Cozinha|Bar|Quiosque|Salão|Estoque)."""
+    chat = LlmChat(
+        api_key=_key(),
+        session_id=f"suppliers-{uuid.uuid4()}",
+        system_message="Você classifica fornecedores de um restaurante brasileiro (Porto Alegre) por setor e responde SOMENTE JSON válido.",
+    ).with_model(*EXTRACTION_MODEL)
+    lista = "\n".join(f"- {r['fornecedor']} | {r.get('razao_social', '')}" for r in rows)
+    prompt = (
+        "Setores: Cozinha (alimentos, carnes, peixes, hortifruti, laticínios, mercearia), Bar (bebidas, vinhos, destilados, gelo), "
+        "Quiosque (café, doces, snacks), Salão (descartáveis, embalagens, limpeza, utensílios, uniformes, louças), "
+        "Estoque (geral/misto/outros: supermercado, marketplace, papelaria, informática, ferragens, gás, serviços). "
+        "Na dúvida use Estoque. Fornecedores (nome fantasia | razão social):\n"
+        f"{lista}\nResponda só JSON: {{\"setores\": {{\"<nome fantasia exato>\": \"<setor>\"}}}}"
+    )
+    data = _parse_json(await _run(chat, UserMessage(text=prompt)))
+    return {k: v for k, v in (data.get("setores") or {}).items() if isinstance(v, str)}

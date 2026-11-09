@@ -10,6 +10,7 @@ import type {
   Requisition,
   SectorCmv,
   SupplierSector,
+  ValidadeAlert,
   WindowsResponse,
   Dashboard,
   Insight,
@@ -42,6 +43,7 @@ export const qk = {
   sectorCmv: ["sector-cmv"] as const,
   supplierSectors: ["supplier-sectors"] as const,
   ifood: ["ifood"] as const,
+  validades: ["validades"] as const,
 };
 
 // Every data upload changes every metric — invalidate all derived queries at once.
@@ -96,3 +98,5 @@ export const useSupplierSectors = (enabled: boolean) =>
   useQuery({ queryKey: qk.supplierSectors, queryFn: () => apiGet<SupplierSector[]>("/suppliers/sectors"), enabled });
 export const useIfood = (month?: string) =>
   useQuery({ queryKey: [...qk.ifood, month ?? ""], queryFn: () => apiGet<IfoodSummary>(`/ifood/summary${month ? `?month=${month}` : ""}`) });
+export const useValidades = () =>
+  useQuery({ queryKey: qk.validades, queryFn: () => apiGet<ValidadeAlert[]>("/validades?dias=7"), refetchInterval: 60000 });

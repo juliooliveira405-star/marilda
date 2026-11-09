@@ -256,6 +256,22 @@ function NotificationBell() {
               <span>{m}</span>
             </div>
           ))}
+          {data?.validades.map((v) => (
+            <button
+              key={v.code}
+              data-testid={`notification-validade-${v.code}`}
+              className="flex w-full gap-2 border-b border-slate-800/70 bg-[#450A0A]/30 px-4 py-2.5 text-left text-xs text-[#FCA5A5] transition-colors duration-150 hover:bg-[#450A0A]/50"
+              onClick={() => {
+                setOpen(false);
+                navigate("/contagem-qr#validades");
+              }}
+            >
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                <strong>{v.dias < 0 ? "Vencido" : v.dias === 0 ? "Vence hoje" : `Vence em ${v.dias} dia${v.dias > 1 ? "s" : ""}`}</strong> · {v.descricao} · {v.sector}
+              </span>
+            </button>
+          ))}
           {data?.items.length ? (
             data.items.map((n) => (
               <button
@@ -275,9 +291,9 @@ function NotificationBell() {
                 <div className="mt-1 text-sm text-slate-200">{n.message}</div>
               </button>
             ))
-          ) : (
+          ) : !data?.validades.length ? (
             <p className="px-4 py-6 text-center text-xs text-slate-500" data-testid="notification-empty">Nenhuma notificação nova.</p>
-          )}
+          ) : null}
         </div>
       </PopoverContent>
     </Popover>

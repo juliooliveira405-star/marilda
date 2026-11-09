@@ -6,7 +6,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { apiPut, errorMessage } from "@/lib/api";
+import { apiPost, apiPut, errorMessage } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { CheckCheck, Loader2, Sparkles } from "lucide-react";
 import { qk, useSupplierSectors, useSuppliers } from "@/lib/queries";
 import type { SupplierSector, SupplierSectorIn } from "@/lib/types";
 import { brl, compactBrl, dateBr, monthLabel, pct } from "@/lib/format";
@@ -39,8 +41,88 @@ function SectorPicker({ row }: { row: SupplierSector | undefined }) {
           {SECTOR_OPTS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
         </SelectContent>
       </Select>
-      {row.auto && row.sector && <span className="text-[9px] uppercase text-slate-500" title="Sugerido pelo nome do fornecedor">auto</span>}
+      {row.sector && row.fonte !== "manual" && (
+        <span className={cn("text-[9px] uppercase", row.fonte === "ia" ? "text-[#A5B4FC]" : "text-slate-500")} title="Sugestão automática — confirme ou troque">
+          {row.fonte === "ia" ? "IA" : "regra"}
+        </span>
+      )}
     </div>
+  );
+}
+
+function ReviewPanel({ rows }: { rows: SupplierSector[] }) {
+  const qc = useQueryClient();
+  const pending = rows.filter((r) => !r.sector || r.fonte === "ia").sort((a, b) => b.total - a.total);
+  const [busyAll, setBusyAll] = useState(false);
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: qk.supplierSectors });
+    void qc.invalidateQueries({ queryKey: qk.sectorCmv });
+  };
+  const suggest = useMutation({
+    mutationFn: () => apiPost<SupplierSector[]>("/suppliers/sectors/suggest", {}),
+    onSuccess: (r) => { qc.setQueryData(qk.supplierSectors, r); refresh(); toast.success("Sugestões da IA aplicadas — confirme ou troque cada uma"); },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  const setOne = useMutation({
+    mutationFn: (b: SupplierSectorIn) => apiPut<SupplierSector>("/suppliers/sectors", b),
+    onSuccess: refresh,
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  const confirmAll = async () => {
+    setBusyAll(true);
+    try {
+      for (const r of pending.filter((x) => x.sector)) await apiPut<SupplierSector>("/suppliers/sectors", { fornecedor: r.fornecedor, sector: r.sector });
+      toast.success("Sugestões confirmadas");
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusyAll(false);
+      refresh();
+    }
+  };
+  if (!pending.length) return null;
+  const semSetor = pending.filter((r) => !r.sector);
+  return (
+    <Panel title={`Revisar setor dos fornecedores (${pending.length})`} testId="supplier-review-panel"
+      action={
+        <div className="flex flex-wrap gap-2">
+          {semSetor.length > 0 && (
+            <Button size="sm" variant="outline" data-testid="supplier-review-suggest" disabled={suggest.isPending} onClick={() => suggest.mutate()}>
+              {suggest.isPending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1 h-4 w-4" />}Sugerir com IA
+            </Button>
+          )}
+          {pending.some((r) => r.sector) && (
+            <Button size="sm" data-testid="supplier-review-confirm-all" disabled={busyAll} onClick={() => void confirmAll()}>
+              {busyAll ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <CheckCheck className="mr-1 h-4 w-4" />}Confirmar todas
+            </Button>
+          )}
+        </div>
+      }>
+      <p className="mb-3 text-xs text-slate-400">
+        {semSetor.length > 0 && <>{semSetor.length} sem setor ({brl(semSetor.reduce((a, r) => a + r.total, 0))}) ficam fora do CMV por setor. </>}
+        Sugestões da IA (roxo) já contam no CMV do setor — toque no setor certo para confirmar. “Estoque” = compras gerais/mistas.
+      </p>
+      <ul className="max-h-[420px] divide-y divide-slate-800/70 overflow-y-auto">
+        {pending.map((r) => (
+          <li key={r.fornecedor} className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-center sm:justify-between" data-testid={`supplier-review-row-${r.fornecedor}`}>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium text-slate-100">{r.fornecedor}</div>
+              <div className="truncate text-[11px] text-slate-500">{r.razao_social} · {brl(r.total)}</div>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {SECTOR_OPTS.map((o) => (
+                <button key={o} type="button" data-testid={`supplier-review-${r.fornecedor}-${o}`} disabled={setOne.isPending}
+                  onClick={() => setOne.mutate({ fornecedor: r.fornecedor, sector: o })}
+                  className={cn("min-h-9 rounded-md border px-2.5 text-xs transition-[background-color,border-color] duration-150",
+                    r.sector === o ? "border-[#818CF8] bg-[#1E1B4B] text-[#C7D2FE]" : "border-slate-800 text-slate-400 hover:border-slate-600")}>
+                  {o}
+                </button>
+              ))}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Panel>
   );
 }
 
@@ -83,6 +165,8 @@ export default function Fornecedores() {
               </Panel>
             ))}
           </div>
+
+          {sectorRows && <ReviewPanel rows={sectorRows} />}
 
           <Panel title="Pareto — top 20" testId="abc-pareto-chart">
             <div className="h-72">

@@ -20,6 +20,7 @@ from lib.dates import now_local
 from lib.db import db
 from lib.ingest import now_iso
 from lib.metrics import compute_months, cost_map
+from lib.validade import expiring
 from lib.sectors import SECTORS, audit, can_see_costs, notify, role_emails
 from models.schemas import (
     DupCheck, DupCheckIn, FulfillIn, Notifications, ReqActionIn, Requisition, RequisitionIn,
@@ -305,7 +306,8 @@ async def notifications(member: dict = Depends(viewer)):
     rows = await db.notifications.find({"to": member.get("email", ""), "read": False}, {"_id": 0}).sort("at", -1).to_list(50)
     rows.sort(key=lambda n: n["priority"] != "urgente")  # urgent on top, newest first inside each group
     meses = [m["alerta_parcial"] for m in (await compute_months())[-2:] if m["alerta_parcial"]]
-    return {"count": len(rows), "items": rows, "meses": meses}
+    validades = await expiring(member, 3)
+    return {"count": len(rows) + len(validades), "items": rows, "meses": meses, "validades": validades}
 
 
 @router.post("/notifications/seen", response_model=Notifications)

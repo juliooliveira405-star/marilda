@@ -419,10 +419,27 @@ export interface NotificationItem {
   at: string;
 }
 
+export interface ValidadeAlert {
+  code: string;
+  item: string;
+  descricao: string;
+  validade: string;
+  dias: number;
+  sector: string;
+  qty: number;
+  um: string;
+  label_id: string;
+}
+
+export interface BaixaIn {
+  motivo: "consumido" | "descartado" | "transferido";
+}
+
 export interface Notifications {
   count: number;
   items: NotificationItem[];
   meses: string[];
+  validades: ValidadeAlert[];
 }
 
 export interface SectorMonth {
@@ -451,6 +468,7 @@ export interface SupplierSector {
   total: number;
   sector: string | null;
   auto: boolean;
+  fonte: string;
 }
 
 export interface SupplierSectorIn {

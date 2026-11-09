@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCheck, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -11,13 +12,74 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiDelete, apiPost, errorMessage } from "@/lib/api";
-import { DERIVED_KEYS, qk, useCounts, useMe, useOverview } from "@/lib/queries";
+import { DERIVED_KEYS, qk, useCounts, useMe, useOverview, useValidades } from "@/lib/queries";
 import { dateTimeBr, monthLabel, qty } from "@/lib/format";
-import type { CountApplyOut, CountEntry, CountEntryIn } from "@/lib/types";
+import type { BaixaIn, CountApplyOut, CountEntry, CountEntryIn, ValidadeAlert } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type CountSector = "Cozinha" | "Bar" | "Quiosque" | "Estoque";
 const PROD_SECTORS: CountSector[] = ["Cozinha", "Bar", "Quiosque", "Estoque"];
+
+function ValidadesPanel() {
+  const qc = useQueryClient();
+  const { data } = useValidades();
+  const baixa = useMutation({
+    mutationFn: ({ code, motivo }: { code: string; motivo: BaixaIn["motivo"] }) => apiPost<ValidadeAlert[]>(`/validades/${code}/baixa`, { motivo }),
+    onSuccess: (r) => {
+      qc.setQueryData(qk.validades, r);
+      void qc.invalidateQueries({ queryKey: qk.notifications });
+      toast.success("Baixa registrada");
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  const list = data ?? [];
+  const { hash } = useLocation();
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (hash === "#validades" && data) ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [hash, data]);
+  const bySector = list.reduce<Record<string, ValidadeAlert[]>>((acc, v) => ({ ...acc, [v.sector]: [...(acc[v.sector] ?? []), v] }), {});
+  return (
+    <div id="validades" ref={ref} className="scroll-mt-20">
+      <Panel title={`Validades — próximos 7 dias (${list.length})`} testId="validades-panel">
+        {!list.length ? (
+          <p className="text-xs text-slate-500" data-testid="validades-empty">Nenhuma etiqueta lida vencendo nos próximos 7 dias. O sino avisa quando faltar 3 dias ou menos.</p>
+        ) : (
+          <div className="space-y-4">
+            {Object.entries(bySector).map(([sec, rows]) => (
+              <div key={sec}>
+                <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{sec}</div>
+                <ul className="space-y-2">
+                  {rows.map((v) => (
+                    <li key={v.code} className={cn("rounded-lg border p-2.5 text-sm", v.dias <= 3 ? "border-[#F87171]/50 bg-[#450A0A]/25" : "border-slate-800")} data-testid={`validade-row-${v.code}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="min-w-0">
+                          <span className="block truncate text-slate-100">{v.descricao}</span>
+                          <span className="text-[11px] text-slate-500">{qty(v.qty)} {v.um}{v.label_id && ` · #${v.label_id}`}</span>
+                        </span>
+                        <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase", v.dias <= 3 ? "bg-[#450A0A] text-[#F87171]" : "bg-[#78350F] text-[#FDE68A]")}>
+                          {v.dias < 0 ? "vencido" : v.dias === 0 ? "vence hoje" : `${v.dias} dia${v.dias > 1 ? "s" : ""}`} · {v.validade.slice(8, 10)}/{v.validade.slice(5, 7)}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {(["consumido", "transferido", "descartado"] as const).map((m) => (
+                          <Button key={m} size="sm" variant={m === "descartado" ? "destructive" : "outline"} className="h-8 text-xs capitalize"
+                            data-testid={`validade-baixa-${m}-${v.code}`} disabled={baixa.isPending} onClick={() => baixa.mutate({ code: v.code, motivo: m })}>
+                            {m}
+                          </Button>
+                        ))}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+    </div>
+  );
+}
 
 export default function ContagemQR() {
   const qc = useQueryClient();
@@ -147,6 +209,7 @@ export default function ContagemQR() {
               </ul>
             )}
           </Panel>
+          <ValidadesPanel />
           <Panel title="Últimas leituras" testId="count-entries">
             <ul className="max-h-80 divide-y divide-slate-800/70 overflow-y-auto">
               {(data?.entries ?? []).map((e) => (
