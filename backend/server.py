@@ -20,7 +20,7 @@ try:  # launched as `backend.server` (the default)
 except ModuleNotFoundError:  # launched from inside backend/ as `server`
     from clerk_auth import clerk_router
 
-from routers import analytics, data, requisitions, stock, users
+from routers import analytics, data, ifood, requisitions, stock, users
 
 
 @asynccontextmanager
@@ -46,6 +46,7 @@ api_router.include_router(data.router)
 api_router.include_router(analytics.router)
 api_router.include_router(stock.router)
 api_router.include_router(requisitions.router)
+api_router.include_router(ifood.router)
 
 app.add_middleware(
     CORSMiddleware,

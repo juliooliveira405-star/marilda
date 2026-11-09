@@ -69,6 +69,26 @@ async def extract_rows(kind: str, file_path: str, mime: str) -> tuple[list[dict]
     return list(data.get("rows") or []), data.get("month")
 
 
+LABEL_SCHEMA = '{"produto":"","peso":null,"um":"KG/G/L/ML/UN","validade":"DD/MM/AAAA","fabricacao":"DD/MM/AAAA","lote":"","label_id":"","responsavel":""}'
+
+
+async def read_label_photo(file_path: str, mime: str) -> dict:
+    """Read a food-safety label photo (Suflex style) and return its printed fields."""
+    chat = LlmChat(
+        api_key=_key(),
+        session_id=f"label-{uuid.uuid4()}",
+        system_message="Você lê etiquetas de manipulação de alimentos (padrão Suflex) de cozinhas brasileiras e responde SOMENTE JSON válido.",
+    ).with_model(*EXTRACTION_MODEL)
+    prompt = (
+        "Leia a etiqueta da foto. Campos: produto = nome em destaque no topo; peso = número IMPRESSO ao lado da unidade "
+        "(ex.: '1500 kg' → 1500, mantenha exatamente o número impresso); um = unidade impressa; validade e fabricacao "
+        "(MANIPULAÇÃO) só a data; label_id = código iniciado por # (sem o #); responsavel = RESP. "
+        f"Responda só com JSON neste formato: {LABEL_SCHEMA}. Campo ilegível = vazio/null."
+    )
+    text = await _run(chat, UserMessage(text=prompt, file_contents=[FileContentWithMimeType(file_path=file_path, mime_type=mime)]))
+    return _parse_json(text)
+
+
 async def generate_insight(model_key: str, context: str, focus: str, question: str) -> str:
     provider, model, _, _ = AI_MODELS[model_key]
     chat = LlmChat(

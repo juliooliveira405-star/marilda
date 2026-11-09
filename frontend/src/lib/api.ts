@@ -73,8 +73,10 @@ export async function apiDownload(path: string, filename: string): Promise<void>
   const a = document.createElement("a");
   a.href = URL.createObjectURL(await res.blob());
   a.download = filename;
+  document.body.append(a);
   a.click();
-  URL.revokeObjectURL(a.href);
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(a.href), 4000); // iOS Safari needs the URL alive a moment
 }
 
 // Human-readable message from an ApiError body ({detail: string | [{msg}]}).

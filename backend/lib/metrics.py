@@ -6,7 +6,7 @@ from typing import Optional
 
 from lib.dates import now_local
 from lib.db import db
-from lib.parsers import month_label
+from lib.parsers import month_label, norm
 
 DEFAULT_SETTINGS = {"empresa": "Locale POA", "cmv_meta_min": 0.28, "cmv_meta_max": 0.30}
 
@@ -57,22 +57,14 @@ def completeness(month: str, notas: int, last_date: Optional[str], has_inv: bool
         pend.append("faturamento")
     alerta = None
     if pend:
-        label = month_label(month)
-        parts = []
-        if has_inv:
-            parts.append(f"estoque até {_br(estoque_ate)}" if estoque_ate else ("estoque contado" if inv_final else "contagem parcial"))
-        if notas:
-            parts.append(f"compras até {_br(last_date)}")
-        if fat:
-            parts.append(f"faturamento até {_br(fat_ate)}" if fat_ate else ("faturamento parcial" if not fat_ok else "faturamento completo"))
-        missing = [p for p, ok in (("inventário de fechamento", has_inv), ("compras", notas > 0), ("faturamento", bool(fat))) if not ok]
-        if not parts:
-            alerta = f"{label} incompleto — aguardando inventário de fechamento, compras e faturamento do mês."
+        estoque_txt = (f"estoque até {_br(estoque_ate)}" if estoque_ate else "estoque contado") if has_inv else "estoque: sem inventário"
+        compras_txt = f"compras até {_br(last_date)}" if notas else "compras: nenhuma lançada"
+        if fat_ate:
+            fat_txt = f"faturamento até {_br(fat_ate)}"
         else:
-            alerta = f"{label} incompleto — " + " · ".join(parts)
-            if missing:
-                alerta += " · aguardando " + ", ".join(missing)
-            alerta += ". CMV % é parcial até o fechamento."
+            fat_txt = ("faturamento completo" if fat_ok else "faturamento parcial") if fat else "faturamento: sem lançamento"
+        alerta = (f"Mês incompleto · {month_label(month)} — {estoque_txt} · {compras_txt} · {fat_txt}. "
+                  f"Falta: {', '.join(pend)}. CMV % é parcial até o fechamento.")
     return {
         "inventario_final": inv_final, "faturamento_completo": fat_ok, "compras_completas": compras_ok,
         "pendencias": pend, "alerta_parcial": alerta, "status": "fechado" if not pend else "aberto",
@@ -251,10 +243,44 @@ async def compute_reorder(from_month: Optional[str] = None, to_month: Optional[s
             "grupo": ref.get("sgrupo") or ref.get("grupo", ""), "qtd_anterior": round(ant, 3), "qtd_atual": round(atu, 3),
             "variacao": round(var, 3), "var_pct": round(pct, 1), "status": status, "sugestao": SUGESTOES[status],
             "custo": round(custo, 4) if custo is not None else None, "valor_reposicao": rep, "setor": setor,
+            "ggrupo": norm(ref.get("ggrupo", "")).upper(),
         })
     items.sort(key=lambda x: (STATUS_ORDER.index(x["status"]), -x["valor_reposicao"], x["variacao"]))
     return {"from_month": from_month, "to_month": to_month, "counts": counts, "sector": sector,
             "valor_reposicao_total": round(total_rep, 2), "items": items}
+
+
+async def compute_sector_months(sector: str) -> dict:
+    """CMV of one sector = EI(setor) + Compras(fornecedores do setor) − EF(setor); % over total revenue."""
+    from lib.sectors import item_sector, supplier_sector_map
+    base = await compute_months()
+    costs = await cost_map()
+    smap = await supplier_sector_map()
+    mine = [f for f, (s, _) in smap.items() if s == sector]
+    unalloc = [f for f, (s, _) in smap.items() if s is None]
+    by_month = {p["_id"]: p["total"] for p in await db.purchases.aggregate([
+        {"$match": {"fornecedor": {"$in": mine}}}, {"$group": {"_id": "$month", "total": {"$sum": "$valor"}}}]).to_list(None)}
+    na = (await db.purchases.aggregate([{"$match": {"fornecedor": {"$in": unalloc}}},
+                                         {"$group": {"_id": None, "t": {"$sum": "$valor"}}}]).to_list(None)) or [{"t": 0}]
+    stock: dict[str, float] = defaultdict(float)
+    async for r in db.inventory.find({}, {"_id": 0, "month": 1, "item": 1, "qty": 1, "ggrupo": 1, "grupo": 1, "sgrupo": 1}):
+        if item_sector(r.get("ggrupo", ""), r.get("grupo", ""), r.get("sgrupo", "")) != sector:
+            continue
+        q, c = r.get("qty") or 0, costs.get(r["item"])
+        stock[r["month"]] += q * c if (q > 0 and c is not None) else 0.0
+    out, prev = [], None
+    for m in base:
+        has_inv = m["itens_inventario"] > 0
+        ef = round(stock.get(m["month"], 0.0), 2) if has_inv else None
+        ei = prev if m["estoque_inicial"] is not None else None
+        compras = round(by_month.get(m["month"], 0.0), 2)
+        cmv = round(ei + compras - ef, 2) if (ei is not None and ef is not None and m["notas"]) else None
+        fat = m["faturamento"]
+        out.append({"month": m["month"], "label": m["label"], "status": m["status"], "alerta_parcial": m["alerta_parcial"],
+                    "estoque_inicial": ei, "compras": compras, "estoque_valor": ef, "cmv": cmv,
+                    "cmv_pct": round(cmv / fat, 4) if (cmv is not None and fat) else None, "faturamento": fat})
+        prev = ef
+    return {"sector": sector, "months": out, "fornecedores": len(mine), "compras_nao_alocadas": round(na[0]["t"], 2)}
 
 
 def _brl(v: float) -> str:

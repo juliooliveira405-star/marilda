@@ -11,6 +11,7 @@ import Fornecedores from "@/pages/Fornecedores";
 import SugestaoPedidos from "@/pages/SugestaoPedidos";
 import Economia from "@/pages/Economia";
 import InsightsIA from "@/pages/InsightsIA";
+import Ifood from "@/pages/Ifood";
 import CarregarDados from "@/pages/CarregarDados";
 import Administracao from "@/pages/Administracao";
 import ContagemQR from "@/pages/ContagemQR";
@@ -35,7 +36,8 @@ export default function App() {
         <Route element={<Protected />}>
           <Route path="/" element={<Navigate to="/painel" replace />} />
           <Route path="/painel" element={<RoleGate roles={VIEW_ROLES}><Painel /></RoleGate>} />
-          <Route path="/cmv-estoque" element={<RoleGate roles={ADMIN_ROLES}><CmvEstoque /></RoleGate>} />
+          <Route path="/cmv-estoque" element={<RoleGate roles={["gerente", "chefe"]}><CmvEstoque /></RoleGate>} />
+          <Route path="/ifood" element={<RoleGate roles={ADMIN_ROLES}><Ifood /></RoleGate>} />
           <Route path="/fornecedores-abc" element={<RoleGate roles={ADMIN_ROLES}><Fornecedores /></RoleGate>} />
           <Route path="/sugestao-pedidos" element={<RoleGate roles={VIEW_ROLES}><SugestaoPedidos /></RoleGate>} />
           <Route path="/contagem-qr" element={<RoleGate roles={VIEW_ROLES}><ContagemQR /></RoleGate>} />

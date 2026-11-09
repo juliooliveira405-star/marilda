@@ -4,13 +4,24 @@ import { Boxes, Receipt, Target, TrendingUp, UploadCloud, Wallet } from "lucide-
 import { AlertItem, EmptyState, KpiCard, PageHeader, Panel, Skeleton } from "@/components/common";
 import { PartialMonthAlerts, PartialTag } from "@/components/PartialAlerts";
 import { buttonVariants } from "@/components/ui/button";
-import { useDashboard, useMe, useOverview } from "@/lib/queries";
+import { useDashboard, useMe, useOverview, useSectorCmv } from "@/lib/queries";
 import { brl, cmvTone, compactBrl, pct, TONE_CLASSES } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+function SectorCmvKpi() {
+  const { data } = useSectorCmv(undefined);
+  const last = [...(data?.months ?? [])].reverse().find((m) => m.cmv_pct !== null);
+  if (!last) return null;
+  return (
+    <KpiCard testId="kpi-card-sector-cmv" label={`CMV % ${data?.sector} · ${last.label}`} value={pct(last.cmv_pct)} tone={cmvTone(last.cmv_pct, 0.3)}
+      icon={<Target className="h-4 w-4" />} hint={<span>{last.status !== "fechado" && <PartialTag month={last} />} <Link to="/cmv-estoque" className="text-amber underline-offset-2 hover:underline">CMV do setor</Link></span>} />
+  );
+}
 
 function PainelSetor() {
   const { data: me } = useMe();
   const { data, isLoading } = useOverview();
+  const sectorCmv = me?.role === "chefe" && ["Cozinha", "Bar", "Quiosque"].includes(me.sector ?? "");
   const open = (data?.months ?? []).filter((m) => m.alerta_parcial);
   return (
     <div>
@@ -34,6 +45,7 @@ function PainelSetor() {
               <KpiCard testId="kpi-card-sector-stock" label={`Estoque ${data.sector} ${data.sector_stock.at(-1)?.label}`} value={brl(data.sector_stock.at(-1)?.valor)}
                 icon={<Wallet className="h-4 w-4" />} hint={`${data.sector_stock.at(-1)?.itens} itens valorizados do setor`} />
             )}
+            {sectorCmv && <SectorCmvKpi />}
           </div>
           {data?.costs_visible && data.sector_stock.length > 1 && (
             <Panel title={`Estoque valorizado — ${data.sector}`} testId="sector-stock-table">
@@ -42,7 +54,7 @@ function PainelSetor() {
                   <li key={s.month} className="rounded-lg border border-slate-800 p-3 text-sm"><div className="text-xs text-slate-400">{s.label}</div><div className="num font-semibold">{brl(s.valor)}</div></li>
                 ))}
               </ul>
-              <p className="mt-3 text-xs text-slate-500">CMV por setor será exibido quando as compras vierem detalhadas por item (hoje as notas têm só o valor total).</p>
+              <p className="mt-3 text-xs text-slate-500">CMV do setor usa as compras dos fornecedores atribuídos ao setor (notas sem detalhe por item).</p>
             </Panel>
           )}
         </div>

@@ -1,11 +1,13 @@
 """Stock operations: item catalog, QR labels, QR/manual inventory counts, sector withdrawals."""
 
+import os
+import tempfile
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pymongo import UpdateOne
 
-from lib import qr
+from lib import ai, qr
 from lib.auth import VIEWERS, require_role
 from lib.dates import now_local
 from lib.db import db
@@ -14,7 +16,7 @@ from lib.parsers import month_label, norm
 from lib.sectors import SECTORS, audit
 from models.schemas import (
     CatalogItem, CountApplyOut, CountEntry, CountEntryIn, CountSummary, QrLabel, QrLabelIn,
-    QrResolveIn, QrResolveOut, WindowsIn, WindowsResponse,
+    QrPhotoOut, QrResolveIn, QrResolveOut, WindowsIn, WindowsResponse,
 )
 
 router = APIRouter()
@@ -75,13 +77,54 @@ async def save_label(body: QrLabelIn, _: dict = Depends(viewer)):
     return doc
 
 
+PHOTO_MIME = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
+
+
+@router.post("/qr/photo", response_model=QrPhotoOut)
+async def label_photo(file: UploadFile = File(...), qr_text: str = Form(""), member: dict = Depends(viewer)):
+    """Photo of a Suflex label → printed fields via AI. The QR text (decoded on the phone, if any) is kept as a fallback ID."""
+    mime = (file.content_type or "").lower()
+    if mime not in PHOTO_MIME:
+        raise HTTPException(status_code=422, detail="Envie uma foto (JPG, PNG, WEBP ou HEIC)")
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Foto maior que 10 MB")
+    suffix = {"image/png": ".png", "image/webp": ".webp", "image/heic": ".heic", "image/heif": ".heif"}.get(mime, ".jpg")
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(content)
+        path = tmp.name
+    try:
+        f = await ai.read_label_photo(path, mime)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Não consegui ler a etiqueta pela foto — tente de novo mais perto e sem reflexo ({str(exc)[:80]})")
+    finally:
+        os.unlink(path)
+    lid = str(f.get("label_id") or "").lstrip("#").strip()
+    if not lid and qr_text.strip():
+        lid = qr.parse_label(qr_text)["label_id"] or qr_text.strip()[:40]
+    peso = f.get("peso")
+    parts = [f"id: {lid}" if lid else "", f"produto: {f.get('produto') or ''}",
+             f"peso: {peso} {f.get('um') or ''}" if peso not in (None, "") else "",
+             f"validade: {f.get('validade') or ''}" if f.get("validade") else "",
+             f"manipulacao: {f.get('fabricacao') or ''}" if f.get("fabricacao") else "",
+             f"lote: {f.get('lote')}" if f.get("lote") else ""]
+    raw = "; ".join(p for p in parts if p)
+    if not (f.get("produto") or lid):
+        raise HTTPException(status_code=422, detail="Não encontrei uma etiqueta legível na foto")
+    await audit(member, "etiqueta lida por foto", raw[:300])
+    return {"raw": raw, "parsed": qr.parse_label(raw), "qr_lido": bool(qr_text.strip())}
+
+
 # ---------- counts ----------
 @router.post("/counts", response_model=CountEntry)
 async def add_count(body: CountEntryIn, member: dict = Depends(viewer)):
     if body.qr_code and await db.count_entries.find_one({"month": body.month, "qr_code": body.qr_code, "deleted": {"$ne": True}}):
         raise HTTPException(status_code=409, detail="Esta etiqueta já foi contada nesta sessão — não foi somada de novo")
-    doc = {"id": str(uuid.uuid4()), **body.model_dump(), "user_email": member.get("email", ""), "created_at": now_iso()}
+    origem = "qr" if body.qr_code else "manual"
+    doc = {"id": str(uuid.uuid4()), **body.model_dump(), "origem": origem, "user_email": member.get("email", ""), "created_at": now_iso()}
     await db.count_entries.insert_one(dict(doc))
+    if origem == "manual":  # fallback without Suflex label: always audited, flagged "pendente Suflex"
+        await audit(member, "contagem manual (pendente Suflex)", f"{month_label(body.month)} · {body.sector or 'Estoque'} · {body.descricao} {body.qty} {body.um}")
     return doc
 
 

@@ -49,7 +49,7 @@ GET /api/me, /api/users (gerente), PATCH /api/users/{id}/role (gerente), GET/PUT
 - Camera (qr-scanner, iOS/Android/desktop) or text field (USB/Bluetooth scanner/paste). POST /api/qr/resolve parses JSON / URL params / key:value / free text (produto, peso g→kg, lote, validade) and suggests catalog items. Unknown label → user confirms once → POST /api/qr/labels memorises label code (sha1 of raw) + product alias. Known labels auto-sum in counts.
 - Contagem por QR (/contagem-qr): POST /api/counts entries per month; POST /api/counts/{month}/apply upserts summed qty into that month's inventory (other items untouched), logs an upload record. Entries soft-deleted.
 ## Requisições de retirada (/requisicoes)
-- Sectors: Bar, Salão, Boqueta, Cozinha, Produção, Garde, Café. Gerente/Chefe → direct "entregue". Alimentador → direct only inside time windows (settings _id retirada_windows, set by Gerente/Chefe; days 0=Seg..6=Dom, sectors empty=all), otherwise "pendente" until Gerente/Chefe approves/rejects. Valued at unit cost; GET /api/withdrawals-summary per sector for the month.
+- (v1, superseded by v4) Sectors: Bar, Salão, Boqueta, Cozinha, Produção, Garde, Café. Gerente/Chefe → direct "entregue". Alimentador → direct only inside time windows (settings _id retirada_windows, set by Gerente/Chefe; days 0=Seg..6=Dom, sectors empty=all), otherwise "pendente" until Gerente/Chefe approves/rejects. Valued at unit cost; GET /api/withdrawals-summary per sector for the month.
 ## Platform: responsive PWA (manifest.webmanifest) — installable on iOS/Android home screen, works on desktop browsers.
 
 ## v3 (planilha "Ai do app.xlsx") — permissões, requisições, auditoria
@@ -59,4 +59,17 @@ GET /api/me, /api/users (gerente), PATCH /api/users/{id}/role (gerente), GET/PUT
 - QR: same qr_code twice in the same month's count → 409 "Esta etiqueta já foi contada nesta sessão".
 - Audit log db.audit (uploads, undo, manual entries, roles, invites, settings, windows, counts apply, requisition actions) → GET /api/audit (Admin). Backup GET /api/backup → xlsx in "Planilha completa" layout (re-importable) + Requisições sheet.
 - Idle logout after 30 min (frontend, localStorage last-activity, checked on resume).
-- NOT done (deviations): CMV % per sector (purchases have no item detail yet), saved favourite filters, supplier/price-variation filters, iFood tab, Suflex real label format (awaiting photo).
+- (v3 deviations now resolved in v4, except price-variation filter.)
+
+## v4 (briefing "Madrila_ERP_Briefing_IA.xlsx")
+- Requisition sectors: Cozinha, Bar, Quiosque, Salão, Estoque. Status: rascunho→enviada→aprovada|rejeitada|devolvida; aprovada→em_preparo→pronto→entregue (estoque); aprovada/em_preparo→comprada→recebida. Gerente approves/rejects/devolve/exclui; Gerente+Alimentador (=estoquista) run em_preparo/pronto/entregue/comprada/recebida.
+- Per-item separation PUT /api/requisitions/{id}/fulfillment: disponibilidade ok|parcial(qty atendido)|sem_estoque + obs → requester notified. Alimentador sees own drafts + every submitted requisition (needed to prepare), never values.
+- Duplicates: POST /api/requisitions/check → dialog "Adicionar à Nº X" (POST /{id}/add-items merges lines) or "Criar nova" (force). Rejeitada → "Criar nova corrigida".
+- PDF: GET /api/requisitions/{id}/pdf (reportlab, lib/pdf.py; signature lines; costs only if viewer may see them). Alimentador 403.
+- Notifications db.notifications (one doc per recipient, read flag). enviada → all gerentes+alimentadores; aprovada → requester + alimentadores; every status/separation → requester. GET /api/notifications {count, items, meses(alerts of last 2 months)}; POST /notifications/seen, /notifications/{id}/read. Header bell (popover) on every page; click → /requisicoes?abrir=id.
+- CMV por setor GET /api/cmv/sector?sector= (lib/metrics.compute_sector_months): EI(setor items) + Compras(fornecedores do setor) − EF; % over TOTAL revenue. Supplier→sector: keyword guess (lib/sectors.SUPPLIER_RULES) overridable by Gerente in Curva ABC (GET/PUT /api/suppliers/sectors, db.supplier_sectors). Chefe Cozinha/Bar/Quiosque: only own sector (CMV page + Painel KPI), faturamento hidden; Chefe Salão/Alimentador 403.
+- Month alert text: "Mês incompleto · Out/26 — estoque até 18/10 · compras até 22/10 · faturamento até 31/10. Falta: …". Data update (audited): Out/26 faturamento 1.121.937,34 fechado (até 31/10); Nov/26 268.440 parcial até 08/11. With that revenue Out CMV % = 33,4% (parcial).
+- Sugestão: filters grande grupo, subgrupo, Top N, só sem custo, favourites (localStorage, filter values only); "Gerar requisição dos zerados" uses the filtered list.
+- iFood (/ifood, Gerente): config (taxa, CMV estimado, setor padrão Quiosque, incluir no CMV, formato) in settings _id ifood; POST /api/ifood/upload CSV/XLSX (header synonyms, dedupe key); item mapping PUT /api/ifood/map; GET /api/ifood/summary. Not yet added to general CMV (awaiting report format).
+- Contagem: sector tag (Cozinha/Bar/Quiosque/Estoque); manual entries = origem "manual · pendente Suflex" + audit. "Foto da etiqueta": POST /api/qr/photo (Gemini reads printed label: produto, peso, validade, manipulação, #ID; QR decoded on phone if possible). Label identity = printed/encoded ID (e.g. F35747) → anti-duplicate across QR and photo. Suflex prints "1500 kg" = 1,500 kg (value ≥100 integer kg/L ÷1000).
+- Login: Emergent-managed Clerk e-mail + senha (public sign-up → Pendente → Gerente approves), UI localized ptBR (@clerk/localizations 4.21.2).

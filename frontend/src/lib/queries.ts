@@ -5,8 +5,11 @@ import type {
   AuditRow,
   CountSummary,
   Notifications,
+  IfoodSummary,
   Overview,
   Requisition,
+  SectorCmv,
+  SupplierSector,
   WindowsResponse,
   Dashboard,
   Insight,
@@ -36,10 +39,13 @@ export const qk = {
   notifications: ["notifications"] as const,
   overview: ["overview"] as const,
   audit: ["audit"] as const,
+  sectorCmv: ["sector-cmv"] as const,
+  supplierSectors: ["supplier-sectors"] as const,
+  ifood: ["ifood"] as const,
 };
 
 // Every data upload changes every metric — invalidate all derived queries at once.
-export const DERIVED_KEYS = [qk.dashboard, qk.suppliers, qk.reorder, qk.periods, qk.uploads, qk.overview];
+export const DERIVED_KEYS = [qk.dashboard, qk.suppliers, qk.reorder, qk.periods, qk.uploads, qk.overview, qk.sectorCmv, qk.supplierSectors];
 
 export const useMe = () => useQuery({ queryKey: qk.me, queryFn: () => apiGet<Me>("/me"), retry: 1 });
 export const useDashboard = () => useQuery({ queryKey: qk.dashboard, queryFn: () => apiGet<Dashboard>("/dashboard") });
@@ -79,3 +85,14 @@ export const useNotifications = () =>
   useQuery({ queryKey: qk.notifications, queryFn: () => apiGet<Notifications>("/notifications"), refetchInterval: 20000 });
 export const useOverview = () => useQuery({ queryKey: qk.overview, queryFn: () => apiGet<Overview>("/overview") });
 export const useAudit = () => useQuery({ queryKey: qk.audit, queryFn: () => apiGet<AuditRow[]>("/audit") });
+export const useSectorCmv = (sector: string | undefined, enabled = true) =>
+  useQuery({
+    queryKey: [...qk.sectorCmv, sector ?? ""],
+    queryFn: () => apiGet<SectorCmv>(`/cmv/sector${sector ? `?sector=${encodeURIComponent(sector)}` : ""}`),
+    enabled,
+    retry: false,
+  });
+export const useSupplierSectors = (enabled: boolean) =>
+  useQuery({ queryKey: qk.supplierSectors, queryFn: () => apiGet<SupplierSector[]>("/suppliers/sectors"), enabled });
+export const useIfood = (month?: string) =>
+  useQuery({ queryKey: [...qk.ifood, month ?? ""], queryFn: () => apiGet<IfoodSummary>(`/ifood/summary${month ? `?month=${month}` : ""}`) });

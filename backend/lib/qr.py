@@ -22,7 +22,10 @@ DATE_RE = re.compile(r"\b(\d{2}/\d{2}/\d{2,4}|\d{4}-\d{2}-\d{2})\b")
 
 
 def label_code(raw: str) -> str:
-    return hashlib.sha1(raw.strip().encode()).hexdigest()[:20]
+    """Identity of a physical label: its printed/encoded ID (e.g. Suflex #F35747) when present, else the raw content."""
+    lid = re.sub(r"[^A-Z0-9]", "", str(parse_label(raw)["label_id"]).upper())
+    key = f"id:{lid}" if len(lid) >= 4 else raw.strip()
+    return hashlib.sha1(key.encode()).hexdigest()[:20]
 
 
 def _iso(v: str) -> str:
@@ -34,6 +37,8 @@ def _apply_unit(value: float | None, unit: str) -> tuple[float | None, str]:
     u = unit.lower()
     if value is None:
         return None, unit.upper()
+    if u in ("kg", "l", "lt") and value >= 100 and float(value).is_integer():
+        value = round(value / 1000, 4)  # Suflex prints "1500 kg" for 1,500 kg (no decimal separator)
     if u in ("g", "gr"):
         return round(value / 1000, 4), "KG"
     if u == "ml":

@@ -14,6 +14,10 @@ import { apiDelete, apiPost, errorMessage } from "@/lib/api";
 import { DERIVED_KEYS, qk, useCounts, useMe, useOverview } from "@/lib/queries";
 import { dateTimeBr, monthLabel, qty } from "@/lib/format";
 import type { CountApplyOut, CountEntry, CountEntryIn } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+type CountSector = "Cozinha" | "Bar" | "Quiosque" | "Estoque";
+const PROD_SECTORS: CountSector[] = ["Cozinha", "Bar", "Quiosque", "Estoque"];
 
 export default function ContagemQR() {
   const qc = useQueryClient();
@@ -26,6 +30,7 @@ export default function ContagemQR() {
   const [raw, setRaw] = useState<string | null>(null);
   const [autoKnown, setAutoKnown] = useState(true);
   const [confirmApply, setConfirmApply] = useState(false);
+  const [sector, setSector] = useState<CountSector>(me?.role === "chefe" && PROD_SECTORS.includes(me.sector as CountSector) ? (me.sector as CountSector) : "Estoque");
   const monthRow = dash?.months.find((m) => m.month === month);
 
   const add = useMutation({
@@ -55,9 +60,9 @@ export default function ContagemQR() {
   const addLine = useCallback(
     (l: PickedLine) => {
       setRaw(null);
-      add.mutate({ month, ...l });
+      add.mutate({ month, ...l, sector });
     },
-    [add, month],
+    [add, month, sector],
   );
 
   return (
@@ -75,6 +80,18 @@ export default function ContagemQR() {
                 <Label className="mb-2 text-xs uppercase tracking-wider text-slate-400">Mês da contagem</Label>
                 <Input type="month" data-testid="count-month-input" value={month} onChange={(e) => setMonthSel(e.target.value)} className="w-44" />
               </div>
+              <div>
+                <Label className="mb-2 text-xs uppercase tracking-wider text-slate-400">Setor da produção</Label>
+                <div className="flex flex-wrap gap-1.5" data-testid="count-sector-selector">
+                  {PROD_SECTORS.map((s) => (
+                    <button key={s} type="button" data-testid={`count-sector-${s}`} onClick={() => setSector(s)}
+                      className={cn("min-h-10 rounded-lg border px-3 text-xs transition-[border-color,background-color] duration-150",
+                        sector === s ? "border-amber bg-amber/10 text-amber" : "border-slate-800 text-slate-400 hover:border-slate-600")}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <label className="flex items-center gap-2 pb-2 text-xs text-slate-300">
                 <Checkbox data-testid="count-auto-known-checkbox" checked={autoKnown} onCheckedChange={(c: boolean) => setAutoKnown(c)} />
                 Somar etiquetas já conhecidas automaticamente
@@ -91,7 +108,10 @@ export default function ContagemQR() {
                 <QrReader onScan={setRaw} testId="count-qr" />
                 {raw && <LabelConfirm key={raw} raw={raw} autoKnown={autoKnown} onConfirm={addLine} onCancel={() => setRaw(null)} />}
               </TabsContent>
-              <TabsContent value="manual">
+              <TabsContent value="manual" className="space-y-3">
+                <p className="rounded-lg border border-amber/30 bg-amber/5 px-3 py-2 text-xs text-amber" data-testid="count-manual-hint">
+                  Fallback sem etiqueta: a leitura fica marcada como “pendente Suflex” e registrada no log de auditoria.
+                </p>
                 <ManualLine onAdd={addLine} testId="count-manual" />
               </TabsContent>
             </Tabs>
@@ -132,8 +152,9 @@ export default function ContagemQR() {
               {(data?.entries ?? []).map((e) => (
                 <li key={e.id} className="flex items-center justify-between gap-2 py-2 text-xs" data-testid={`count-entry-${e.id}`}>
                   <span className="min-w-0">
-                    <span className="block truncate text-slate-200">{e.descricao} {e.qr_code && <span className="ml-1 rounded bg-[#1E1B4B] px-1 text-[10px] text-[#A5B4FC]">QR</span>}</span>
-                    <span className="text-slate-500">{dateTimeBr(e.created_at)} · {e.user_email}</span>
+                    <span className="block truncate text-slate-200">{e.descricao} {e.qr_code ? <span className="ml-1 rounded bg-[#1E1B4B] px-1 text-[10px] text-[#A5B4FC]">QR</span>
+                      : <span className="ml-1 rounded bg-[#78350F] px-1 text-[10px] text-[#FDE68A]" data-testid={`count-entry-manual-${e.id}`}>manual · pendente Suflex</span>}</span>
+                    <span className="text-slate-500">{dateTimeBr(e.created_at)} · {e.sector ?? "Estoque"} · {e.user_email}</span>
                   </span>
                   <span className="flex shrink-0 items-center gap-2">
                     <span className="num text-slate-200">{qty(e.qty)} {e.um}</span>

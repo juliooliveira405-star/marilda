@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import QrScanner from "qr-scanner";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Camera, CameraOff, Check, Loader2, ScanLine, Search } from "lucide-react";
+import { Camera, CameraOff, Check, ImageUp, Loader2, ScanLine, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { apiGet, apiPost, errorMessage } from "@/lib/api";
+import { apiGet, apiPost, apiUpload, errorMessage } from "@/lib/api";
 import { qty as fmtQty } from "@/lib/format";
-import type { CatalogItem, QrLabel, QrLabelIn, QrResolveOut } from "@/lib/types";
+import type { CatalogItem, QrLabel, QrLabelIn, QrPhotoOut, QrResolveOut } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export interface PickedLine {
@@ -60,6 +60,24 @@ export function QrReader({ onScan, testId = "qr" }: { onScan: (raw: string) => v
     setActive(false);
   };
 
+  // Photo of the whole label: QR decoded on the phone when possible + printed text read by AI (product, weight, dates, #ID).
+  const fileRef = useRef<HTMLInputElement>(null);
+  const photo = useMutation({
+    mutationFn: async (file: File) => {
+      const qrText = await QrScanner.scanImage(file, { returnDetailedScanResult: true }).then((r) => r.data).catch(() => "");
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("qr_text", qrText);
+      return apiUpload<QrPhotoOut>("/qr/photo", fd);
+    },
+    onSuccess: (r) => {
+      if (navigator.vibrate) navigator.vibrate(80);
+      toast.success(`Etiqueta lida: ${r.parsed.produto || r.parsed.label_id}`);
+      onScanRef.current(r.raw);
+    },
+    onError: (e) => toast.error(errorMessage(e, "Não consegui ler a etiqueta pela foto")),
+  });
+
   return (
     <div className="space-y-3">
       <div className={cn("relative overflow-hidden rounded-xl border border-slate-800 bg-black", active ? "aspect-[4/3]" : "h-0 border-0")}>
@@ -75,7 +93,14 @@ export function QrReader({ onScan, testId = "qr" }: { onScan: (raw: string) => v
             <Camera className="mr-2 h-4 w-4" /> Ler QR com a câmera
           </Button>
         )}
+        <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" data-testid={`${testId}-photo-input`}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) photo.mutate(f); e.target.value = ""; }} />
+        <Button variant="outline" disabled={photo.isPending} onClick={() => fileRef.current?.click()} data-testid={`${testId}-photo-button`}>
+          {photo.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageUp className="mr-2 h-4 w-4" />}
+          {photo.isPending ? "Lendo etiqueta…" : "Foto da etiqueta"}
+        </Button>
       </div>
+      {photo.isPending && <p className="text-xs text-slate-400" data-testid={`${testId}-photo-reading`}>Lendo produto, peso, validade e código da etiqueta (≈10 s)…</p>}
       <form
         className="flex gap-2"
         onSubmit={(e) => {

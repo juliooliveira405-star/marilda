@@ -168,6 +168,7 @@ export interface ReorderItem {
   status: string;
   sugestao: string;
   setor: string;
+  ggrupo: string;
   custo: number | null;
   valor_reposicao: number | null;
 }
@@ -226,6 +227,12 @@ export interface QrParsed {
   label_id: string;
 }
 
+export interface QrPhotoOut {
+  raw: string;
+  parsed: QrParsed;
+  qr_lido: boolean;
+}
+
 export interface QrLabel {
   code: string;
   item: string;
@@ -262,10 +269,12 @@ export interface CountEntryIn {
   um: string;
   qty: number;
   qr_code: string | null;
+  sector?: "Cozinha" | "Bar" | "Quiosque" | "Estoque" | null;
 }
 
 export interface CountEntry extends CountEntryIn {
   id: string;
+  origem: string;
   user_email: string;
   created_at: string;
 }
@@ -307,6 +316,8 @@ export interface WindowsResponse {
   open_sectors: string[];
 }
 
+export type Availability = "pendente" | "ok" | "parcial" | "sem_estoque";
+
 export interface ReqLine {
   item: string;
   descricao: string;
@@ -314,14 +325,27 @@ export interface ReqLine {
   qty: number;
   custo: number | null;
   qr_code: string | null;
+  disponibilidade: Availability;
+  atendido: number | null;
+  obs_estoque: string;
 }
 
-export type ReqStatus = "rascunho" | "enviada" | "aprovada" | "devolvida" | "rejeitada" | "comprada" | "recebida" | "excluida";
+export type ReqStatus =
+  | "rascunho" | "enviada" | "aprovada" | "devolvida" | "rejeitada"
+  | "em_preparo" | "pronto" | "entregue" | "comprada" | "recebida" | "excluida";
+
+export interface ReqLineIn {
+  item: string;
+  descricao: string;
+  um: string;
+  qty: number;
+  qr_code: string | null;
+}
 
 export interface RequisitionIn {
   sector: string;
   priority: "normal" | "urgente";
-  items: Omit<ReqLine, "custo">[];
+  items: ReqLineIn[];
   note: string;
   submit: boolean;
   force: boolean;
@@ -350,15 +374,43 @@ export interface Requisition {
   history: ReqEvent[];
 }
 
-export type ReqAction = "enviar" | "aprovar" | "rejeitar" | "devolver" | "comprada" | "recebida" | "excluir";
+export type ReqAction = "enviar" | "aprovar" | "rejeitar" | "devolver" | "em_preparo" | "pronto" | "entregue" | "comprada" | "recebida" | "excluir";
 
 export interface ReqActionIn {
   action: ReqAction;
   comment: string;
 }
 
+export interface FulfillLineIn {
+  index: number;
+  disponibilidade: Availability;
+  atendido: number | null;
+  obs: string;
+}
+
+export interface FulfillIn {
+  lines: FulfillLineIn[];
+}
+
+export interface DupCheckIn {
+  sector: string;
+  items: ReqLineIn[];
+}
+
+export interface DupReq {
+  id: string;
+  number: number;
+  status: string;
+  itens: string[];
+}
+
+export interface DupCheck {
+  duplicates: DupReq[];
+}
+
 export interface NotificationItem {
   id: string;
+  req_id: string;
   number: number;
   sector: string;
   priority: string;
@@ -370,6 +422,87 @@ export interface NotificationItem {
 export interface Notifications {
   count: number;
   items: NotificationItem[];
+  meses: string[];
+}
+
+export interface SectorMonth {
+  month: string;
+  label: string;
+  status: string;
+  alerta_parcial: string | null;
+  estoque_inicial: number | null;
+  compras: number;
+  estoque_valor: number | null;
+  cmv: number | null;
+  cmv_pct: number | null;
+  faturamento: number | null;
+}
+
+export interface SectorCmv {
+  sector: string;
+  months: SectorMonth[];
+  fornecedores: number;
+  compras_nao_alocadas: number | null;
+}
+
+export interface SupplierSector {
+  fornecedor: string;
+  razao_social: string;
+  total: number;
+  sector: string | null;
+  auto: boolean;
+}
+
+export interface SupplierSectorIn {
+  fornecedor: string;
+  sector: string | null;
+}
+
+export interface IfoodConfig {
+  taxa: number;
+  cmv_estimado: number;
+  setor_padrao: "Quiosque" | "Cozinha" | "Bar";
+  incluir_cmv: boolean;
+  formato: string;
+}
+
+export interface IfoodMapIn {
+  item: string;
+  setor: "Quiosque" | "Cozinha" | "Bar";
+  entra_cmv: boolean;
+  custo: number | null;
+}
+
+export interface IfoodItem {
+  item: string;
+  qtd: number;
+  bruto: number;
+  setor: string;
+  entra_cmv: boolean;
+  custo: number | null;
+  cmv: number | null;
+  mapeado: boolean;
+}
+
+export interface IfoodSummary {
+  config: IfoodConfig;
+  months: string[];
+  month: string | null;
+  pedidos: number;
+  bruto: number;
+  taxas: number;
+  liquido: number;
+  cmv: number;
+  cmv_pct: number | null;
+  ticket_medio: number | null;
+  itens_sem_custo: number;
+  items: IfoodItem[];
+}
+
+export interface IfoodUploadOut {
+  rows: number;
+  ignored: number;
+  message: string;
 }
 
 export interface OverviewMonth {

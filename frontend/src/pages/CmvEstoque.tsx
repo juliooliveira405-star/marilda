@@ -2,11 +2,86 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { EmptyState, PageHeader, Panel, Skeleton } from "@/components/common";
 import { PartialMonthAlerts, PartialTag } from "@/components/PartialAlerts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useDashboard } from "@/lib/queries";
+import { useState } from "react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useDashboard, useMe, useSectorCmv } from "@/lib/queries";
 import { brl, cmvTone, compactBrl, pct, TONE_CLASSES } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+const CMV_SECTORS = ["Cozinha", "Bar", "Quiosque"];
+
+function SectorCmvPanel({ locked, max }: { locked?: string; max: number }) {
+  const [pick, setPick] = useState("Cozinha");
+  const sector = locked ?? pick;
+  const { data, isLoading, isError, error } = useSectorCmv(locked ? undefined : sector);
+  const months = (data?.months ?? []).filter((m) => m.estoque_valor !== null || m.compras > 0);
+  return (
+    <Panel title={`CMV do setor · ${sector}`} testId="sector-cmv-panel"
+      action={!locked && (
+        <Select value={pick} onValueChange={(v: string) => setPick(v)}>
+          <SelectTrigger size="sm" className="w-36" data-testid="sector-cmv-select"><SelectValue /></SelectTrigger>
+          <SelectContent>{CMV_SECTORS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+        </Select>
+      )}>
+      {isLoading ? <Skeleton className="h-40" /> : isError ? (
+        <EmptyState title="CMV do setor indisponível" detail={error instanceof Error ? error.message : undefined} testId="sector-cmv-error" />
+      ) : (
+        <div className="space-y-4">
+          <PartialMonthAlerts months={months} testId="sector-partial-alerts" />
+          <Table>
+            <TableHeader>
+              <TableRow className="border-slate-800 hover:bg-transparent">
+                {["Mês", "Est. Inicial", "Compras do setor", "Est. Final", "CMV R$", "CMV % do fat. total"].map((h) => (
+                  <TableHead key={h} className={cn("text-xs uppercase tracking-wider text-slate-400", h !== "Mês" && "text-right")}>{h}</TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {months.map((m) => (
+                <TableRow key={m.month} data-testid={`sector-cmv-row-${m.month}`} className="border-slate-800/70">
+                  <TableCell className="font-semibold">{m.label}</TableCell>
+                  <TableCell className="num text-right">{brl(m.estoque_inicial)}</TableCell>
+                  <TableCell className="num text-right">{brl(m.compras)}</TableCell>
+                  <TableCell className="num text-right">{brl(m.estoque_valor)}</TableCell>
+                  <TableCell className="num text-right font-semibold">{brl(m.cmv)}</TableCell>
+                  <TableCell className="text-right">
+                    <span className="inline-flex items-center gap-1">
+                      {m.cmv_pct !== null && <PartialTag month={m} />}
+                      <span className={cn("num rounded px-2 py-0.5 text-xs font-semibold", TONE_CLASSES[cmvTone(m.cmv_pct, max)])} data-testid={`sector-cmv-pct-${m.month}`}>
+                        {m.cmv !== null && m.cmv_pct === null ? "— (sem faturamento)" : pct(m.cmv_pct)}
+                      </span>
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <div className="space-y-1 text-xs text-slate-500">
+            <div>• Estoque do setor = itens dos grupos do setor × custo. Compras do setor = notas dos fornecedores atribuídos a {sector} ({data?.fornecedores ?? 0} fornecedores).</div>
+            {data?.compras_nao_alocadas ? <div className="text-amber" data-testid="sector-cmv-unallocated">• {brl(data.compras_nao_alocadas)} em compras de fornecedores ainda sem setor — atribua em Curva ABC Fornecedores.</div> : null}
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 export default function CmvEstoque() {
+  const { data: me } = useMe();
+  if (!me) return null;
+  if (me.role === "chefe") {
+    return (
+      <div>
+        <PageHeader eyebrow={`Setor ${me.sector ?? ""}`} title="CMV & Estoque do setor" subtitle="CMV = Estoque Inicial + Compras − Estoque Final, só com itens e fornecedores do seu setor." />
+        {CMV_SECTORS.includes(me.sector ?? "") ? <SectorCmvPanel locked={me.sector ?? ""} max={0.3} />
+          : <EmptyState title="Seu setor não tem CMV" detail="Chefe de Salão acompanha quantidades, sem valores." testId="sector-cmv-none" />}
+      </div>
+    );
+  }
+  return <CmvGeral />;
+}
+
+function CmvGeral() {
   const { data, isLoading, isError } = useDashboard();
   const months = isError ? [] : (data?.months ?? []);
   const max = data?.settings.cmv_meta_max ?? 0.3;
@@ -59,7 +134,7 @@ export default function CmvEstoque() {
                     <TableCell className="text-right">
                       <span className="inline-flex items-center gap-1">
                         {m.cmv_pct !== null && <PartialTag month={m} />}
-                        <span className={cn("num rounded px-2 py-0.5 text-xs font-semibold", TONE_CLASSES[cmvTone(m.cmv_pct, max)])} data-testid={`cmv-pct-${m.month}`}>{pct(m.cmv_pct)}</span>
+                        <span className={cn("num rounded px-2 py-0.5 text-xs font-semibold", TONE_CLASSES[cmvTone(m.cmv_pct, max)])} data-testid={`cmv-pct-${m.month}`}>{m.cmv !== null && m.cmv_pct === null ? "— (sem faturamento)" : pct(m.cmv_pct)}</span>
                       </span>
                     </TableCell>
                     <TableCell className="num text-right text-xs text-slate-400">{m.itens_valorizados}/{m.itens_com_estoque}</TableCell>
@@ -73,6 +148,8 @@ export default function CmvEstoque() {
               <div>• Um mês só fecha com inventário de fechamento + faturamento completo + compras do mês inteiro; até lá o CMV % é parcial.</div>
             </div>
           </Panel>
+
+          <SectorCmvPanel max={max} />
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Panel title="Estoque valorizado por mês" testId="estoque-chart">

@@ -15,7 +15,16 @@ import {
   Hourglass,
   QrCode,
   PackageMinus,
+  Bell,
+  Bike,
+  AlertTriangle,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useMutation } from "@tanstack/react-query";
+import { apiPost } from "@/lib/api";
+import { qk } from "@/lib/queries";
+import { dateTimeBr } from "@/lib/format";
+import type { Notifications } from "@/lib/types";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { setAuthTokenGetter } from "@/lib/api";
@@ -31,13 +40,14 @@ const IDLE_MS = 30 * 60 * 1000;
 
 const NAV: { to: string; label: string; icon: typeof LayoutDashboard; roles: Role[]; testId: string }[] = [
   { to: "/painel", label: "Painel Executivo", icon: LayoutDashboard, roles: VIEW_ROLES, testId: "nav-painel" },
-  { to: "/cmv-estoque", label: "CMV & Estoque", icon: TrendingDown, roles: ADMIN_ROLES, testId: "nav-cmv-estoque" },
+  { to: "/cmv-estoque", label: "CMV & Estoque", icon: TrendingDown, roles: ["gerente", "chefe"], testId: "nav-cmv-estoque" },
   { to: "/fornecedores-abc", label: "Curva ABC Fornecedores", icon: PieChart, roles: ADMIN_ROLES, testId: "nav-fornecedores" },
   { to: "/sugestao-pedidos", label: "Sugestão de Pedidos", icon: ShoppingCart, roles: VIEW_ROLES, testId: "nav-sugestao" },
   { to: "/contagem-qr", label: "Contagem por QR Code", icon: QrCode, roles: VIEW_ROLES, testId: "nav-contagem-qr" },
   { to: "/requisicoes", label: "Requisições", icon: PackageMinus, roles: VIEW_ROLES, testId: "nav-requisicoes" },
   { to: "/economia", label: "Simulador de Economia", icon: Calculator, roles: ADMIN_ROLES, testId: "nav-economia" },
   { to: "/insights-ia", label: "Insights & Diagnóstico IA", icon: Sparkles, roles: ADMIN_ROLES, testId: "nav-insights" },
+  { to: "/ifood", label: "iFood", icon: Bike, roles: ADMIN_ROLES, testId: "nav-ifood" },
   { to: "/carregar-dados", label: "Carregar Dados & PDFs", icon: UploadCloud, roles: FEED_ROLES, testId: "nav-carregar" },
   { to: "/administracao", label: "Administração & Metas", icon: ShieldCheck, roles: ADMIN_ROLES, testId: "nav-admin" },
 ];
@@ -56,8 +66,11 @@ function AuthBridge({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function NavList({ role, onNavigate, badge }: { role: Role | undefined; onNavigate?: () => void; badge: number }) {
-  const items = NAV.filter((n) => role && n.roles.includes(role));
+const COST_SECTORS = ["Cozinha", "Bar", "Quiosque"];
+
+function NavList({ role, sector, onNavigate, badge }: { role: Role | undefined; sector?: string | null; onNavigate?: () => void; badge: number }) {
+  // Chefe Salão sees quantities only → no CMV page.
+  const items = NAV.filter((n) => role && n.roles.includes(role) && !(n.to === "/cmv-estoque" && role === "chefe" && !COST_SECTORS.includes(sector ?? "")));
   return (
     <nav className="flex flex-col gap-1">
       {items.map((n) => (
@@ -205,6 +218,72 @@ function useNotificationToasts(enabled: boolean) {
   return enabled ? (data?.count ?? 0) : 0;
 }
 
+function NotificationBell() {
+  const { data } = useNotifications();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const save = (r: Notifications) => queryClient.setQueryData(qk.notifications, r);
+  const read = useMutation({ mutationFn: (id: string) => apiPost<Notifications>(`/notifications/${id}/read`, {}), onSuccess: save });
+  const seen = useMutation({ mutationFn: () => apiPost<Notifications>("/notifications/seen", {}), onSuccess: save });
+  const count = data?.count ?? 0;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        data-testid="notification-bell"
+        aria-label={`Notificações (${count})`}
+        className="relative flex h-10 w-10 items-center justify-center rounded-lg text-slate-300 transition-colors duration-150 hover:bg-slate-800/70 hover:text-amber"
+      >
+        <Bell className={cn("h-5 w-5", count > 0 && "text-amber")} />
+        {count > 0 && (
+          <span data-testid="notification-bell-badge" className="absolute -right-0.5 -top-0.5 min-w-5 rounded-full bg-[#F87171] px-1 text-center text-[10px] font-bold leading-5 text-black">
+            {count > 99 ? "99+" : count}
+          </span>
+        )}
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[min(92vw,380px)] border-slate-800 bg-panel p-0" data-testid="notification-panel">
+        <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+          <span className="text-sm font-semibold text-slate-100">Notificações</span>
+          {count > 0 && (
+            <button className="text-xs text-amber hover:underline" data-testid="notification-mark-all" onClick={() => seen.mutate()}>
+              Marcar todas como vistas
+            </button>
+          )}
+        </div>
+        <div className="max-h-[60vh] overflow-y-auto">
+          {data?.meses.map((m) => (
+            <div key={m} className="flex gap-2 border-b border-slate-800/70 bg-amber/5 px-4 py-2.5 text-xs text-amber" data-testid="notification-month-alert">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{m}</span>
+            </div>
+          ))}
+          {data?.items.length ? (
+            data.items.map((n) => (
+              <button
+                key={n.id}
+                data-testid={`notification-item-${n.id}`}
+                className="block w-full border-b border-slate-800/70 px-4 py-3 text-left transition-colors duration-150 hover:bg-slate-800/50"
+                onClick={() => {
+                  read.mutate(n.id);
+                  setOpen(false);
+                  navigate(`/requisicoes?abrir=${n.req_id}`);
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  {n.priority === "urgente" && <span className="rounded bg-[#450A0A] px-1.5 text-[9px] font-bold uppercase text-[#F87171]">Urgente</span>}
+                  <span className="text-[11px] text-slate-500">{dateTimeBr(n.at)}</span>
+                </div>
+                <div className="mt-1 text-sm text-slate-200">{n.message}</div>
+              </button>
+            ))
+          ) : (
+            <p className="px-4 py-6 text-center text-xs text-slate-500" data-testid="notification-empty">Nenhuma notificação nova.</p>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function Shell() {
   const { data: me, isLoading, isError } = useMe();
   const [open, setOpen] = useState(false);
@@ -229,7 +308,7 @@ function Shell() {
       <aside data-testid="erp-sidebar" className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col justify-between border-r border-slate-800/80 bg-sidebar p-5 lg:flex">
         <div className="space-y-8">
           <Brand />
-          <NavList role={role} badge={badge} />
+          <NavList role={role} sector={me?.sector} badge={badge} />
         </div>
         <SidebarFooter email={me?.email} roleLabel={me?.role_label} sector={me?.sector} />
       </aside>
@@ -244,6 +323,7 @@ function Shell() {
         </div>
         <div className="flex items-center gap-3">
           <span className="hidden text-xs text-slate-500 sm:inline" data-testid="header-company">Locale POA</span>
+          {role && role !== "pendente" && <NotificationBell />}
           <UserButton />
         </div>
       </header>
@@ -254,7 +334,7 @@ function Shell() {
           <div className="flex h-full flex-col justify-between gap-6">
             <div className="space-y-8">
               <Brand />
-              <NavList role={role} badge={badge} onNavigate={() => setOpen(false)} />
+              <NavList role={role} sector={me?.sector} badge={badge} onNavigate={() => setOpen(false)} />
             </div>
             <SidebarFooter email={me?.email} roleLabel={me?.role_label} sector={me?.sector} />
           </div>

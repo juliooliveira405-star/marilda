@@ -12,9 +12,10 @@ from lib.auth import VIEWERS, require_role
 from lib.db import db
 from lib.ingest import now_iso
 from lib.parsers import month_label
-from lib.sectors import CHEF_SECTORS, audit, can_see_costs, item_sector
+from lib.sectors import CHEF_SECTORS, CMV_SECTORS, SECTORS, audit, can_see_costs, item_sector, supplier_sector_map
 from models.schemas import (
-    AiModel, AuditRow, Dashboard, Insight, InsightIn, Overview, ReorderResponse, SuppliersResponse,
+    AiModel, AuditRow, Dashboard, Insight, InsightIn, Overview, ReorderResponse, SectorCmv, SupplierSector,
+    SupplierSectorIn, SuppliersResponse,
 )
 
 router = APIRouter()
@@ -60,6 +61,42 @@ async def overview(member: dict = Depends(viewer)):
 @router.get("/suppliers", response_model=SuppliersResponse)
 async def get_suppliers(_: dict = Depends(manager)):
     return await metrics.compute_suppliers()
+
+
+@router.get("/cmv/sector", response_model=SectorCmv)
+async def sector_cmv(sector: Optional[str] = None, member: dict = Depends(viewer)):
+    """Gerente: any CMV sector. Chefe Cozinha/Bar/Quiosque: only own sector. Others: 403."""
+    if member["role"] == "chefe":
+        sector = member.get("sector")
+    elif member["role"] != "gerente":
+        raise HTTPException(status_code=403, detail="Seu perfil não vê CMV")
+    if sector not in CMV_SECTORS or not can_see_costs(member, sector):
+        raise HTTPException(status_code=403, detail="CMV por setor disponível só para Cozinha, Bar e Quiosque")
+    data = await metrics.compute_sector_months(sector)
+    if member["role"] != "gerente":
+        data["compras_nao_alocadas"] = None
+        for m in data["months"]:
+            m["faturamento"] = None
+    return data
+
+
+@router.get("/suppliers/sectors", response_model=list[SupplierSector])
+async def supplier_sectors(_: dict = Depends(manager)):
+    smap = await supplier_sector_map()
+    rows = await db.purchases.aggregate([{"$group": {"_id": "$fornecedor", "t": {"$sum": "$valor"}, "rs": {"$first": "$razao_social"}}},
+                                         {"$sort": {"t": -1}}]).to_list(None)
+    return [{"fornecedor": r["_id"], "razao_social": r.get("rs") or "", "total": round(r["t"], 2),
+             "sector": smap.get(r["_id"], (None, True))[0], "auto": smap.get(r["_id"], (None, True))[1]} for r in rows]
+
+
+@router.put("/suppliers/sectors", response_model=SupplierSector)
+async def set_supplier_sector(body: SupplierSectorIn, member: dict = Depends(manager)):
+    if body.sector is not None and body.sector not in SECTORS:
+        raise HTTPException(status_code=422, detail="Setor inválido")
+    await db.supplier_sectors.update_one({"fornecedor": body.fornecedor}, {"$set": {"fornecedor": body.fornecedor, "sector": body.sector}}, upsert=True)
+    await audit(member, "fornecedor → setor", f"{body.fornecedor}: {body.sector or 'não alocado'}")
+    tot = await db.purchases.aggregate([{"$match": {"fornecedor": body.fornecedor}}, {"$group": {"_id": None, "t": {"$sum": "$valor"}}}]).to_list(None)
+    return {"fornecedor": body.fornecedor, "total": round(tot[0]["t"], 2) if tot else 0.0, "sector": body.sector, "auto": False}
 
 
 @router.get("/reorder", response_model=ReorderResponse)

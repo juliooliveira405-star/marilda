@@ -187,6 +187,7 @@ class ReorderItem(BaseModel):
     status: str
     sugestao: str
     setor: str = ""
+    ggrupo: str = ""
     custo: Optional[float] = None
     valor_reposicao: Optional[float] = None
 
@@ -248,6 +249,12 @@ class QrParsed(BaseModel):
     label_id: str = ""
 
 
+class QrPhotoOut(BaseModel):
+    raw: str
+    parsed: QrParsed
+    qr_lido: bool = False
+
+
 class QrLabel(BaseModel):
     code: str
     item: str
@@ -284,6 +291,7 @@ class CountEntryIn(BaseModel):
     um: str = ""
     qty: float = Field(..., gt=0)
     qr_code: Optional[str] = None
+    sector: Optional[Literal["Cozinha", "Bar", "Quiosque", "Estoque"]] = None
 
 
 class CountEntry(BaseModel):
@@ -294,6 +302,8 @@ class CountEntry(BaseModel):
     um: str = ""
     qty: float
     qr_code: Optional[str] = None
+    sector: Optional[str] = None
+    origem: str = "qr"
     user_email: str = ""
     created_at: str
 
@@ -347,6 +357,11 @@ class ReqLineIn(BaseModel):
     qr_code: Optional[str] = None
 
 
+REQ_STATUS = Literal["rascunho", "enviada", "aprovada", "devolvida", "rejeitada", "em_preparo", "pronto", "entregue",
+                     "comprada", "recebida", "excluida"]
+AVAIL = Literal["pendente", "ok", "parcial", "sem_estoque"]
+
+
 class ReqLine(BaseModel):
     item: str
     descricao: str
@@ -354,6 +369,9 @@ class ReqLine(BaseModel):
     qty: float
     custo: Optional[float] = None
     qr_code: Optional[str] = None
+    disponibilidade: AVAIL = "pendente"
+    atendido: Optional[float] = None
+    obs_estoque: str = ""
 
 
 class RequisitionIn(BaseModel):
@@ -377,7 +395,7 @@ class Requisition(BaseModel):
     number: int
     sector: str
     priority: Literal["normal", "urgente"]
-    status: Literal["rascunho", "enviada", "aprovada", "devolvida", "rejeitada", "comprada", "recebida", "excluida"]
+    status: REQ_STATUS
     items: list[ReqLine]
     valor_total: Optional[float] = None
     note: str = ""
@@ -389,12 +407,40 @@ class Requisition(BaseModel):
 
 
 class ReqActionIn(BaseModel):
-    action: Literal["enviar", "aprovar", "rejeitar", "devolver", "comprada", "recebida", "excluir"]
+    action: Literal["enviar", "aprovar", "rejeitar", "devolver", "em_preparo", "pronto", "entregue", "comprada", "recebida", "excluir"]
     comment: str = Field("", max_length=500)
+
+
+class FulfillLineIn(BaseModel):
+    index: int = Field(..., ge=0)
+    disponibilidade: AVAIL
+    atendido: Optional[float] = Field(None, ge=0)
+    obs: str = Field("", max_length=200)
+
+
+class FulfillIn(BaseModel):
+    lines: list[FulfillLineIn] = Field(..., max_length=300)
+
+
+class DupCheckIn(BaseModel):
+    sector: str
+    items: list[ReqLineIn] = Field(..., max_length=300)
+
+
+class DupReq(BaseModel):
+    id: str
+    number: int
+    status: str
+    itens: list[str]
+
+
+class DupCheck(BaseModel):
+    duplicates: list[DupReq]
 
 
 class Notification(BaseModel):
     id: str
+    req_id: str
     number: int
     sector: str
     priority: str
@@ -406,6 +452,89 @@ class Notification(BaseModel):
 class Notifications(BaseModel):
     count: int
     items: list[Notification]
+    meses: list[str] = []
+
+
+# ---------- CMV por setor ----------
+class SectorMonth(BaseModel):
+    month: str
+    label: str
+    status: str
+    alerta_parcial: Optional[str] = None
+    estoque_inicial: Optional[float] = None
+    compras: float = 0
+    estoque_valor: Optional[float] = None
+    cmv: Optional[float] = None
+    cmv_pct: Optional[float] = None
+    faturamento: Optional[float] = None
+
+
+class SectorCmv(BaseModel):
+    sector: str
+    months: list[SectorMonth]
+    fornecedores: int
+    compras_nao_alocadas: Optional[float] = None
+
+
+class SupplierSector(BaseModel):
+    fornecedor: str
+    razao_social: str = ""
+    total: float
+    sector: Optional[str] = None
+    auto: bool = False
+
+
+class SupplierSectorIn(BaseModel):
+    fornecedor: str = Field(..., min_length=1)
+    sector: Optional[str] = None
+
+
+# ---------- iFood ----------
+class IfoodConfig(BaseModel):
+    taxa: float = Field(0.27, ge=0, le=1)
+    cmv_estimado: float = Field(0.32, ge=0, le=1)
+    setor_padrao: Literal["Quiosque", "Cozinha", "Bar"] = "Quiosque"
+    incluir_cmv: bool = True
+    formato: str = Field("A definir", max_length=40)
+
+
+class IfoodMapIn(BaseModel):
+    item: str = Field(..., min_length=1)
+    setor: Literal["Quiosque", "Cozinha", "Bar"]
+    entra_cmv: bool = True
+    custo: Optional[float] = Field(None, ge=0)
+
+
+class IfoodItem(BaseModel):
+    item: str
+    qtd: float
+    bruto: float
+    setor: str
+    entra_cmv: bool
+    custo: Optional[float] = None
+    cmv: Optional[float] = None
+    mapeado: bool = False
+
+
+class IfoodSummary(BaseModel):
+    config: IfoodConfig
+    months: list[str]
+    month: Optional[str] = None
+    pedidos: int
+    bruto: float
+    taxas: float
+    liquido: float
+    cmv: float
+    cmv_pct: Optional[float] = None
+    ticket_medio: Optional[float] = None
+    itens_sem_custo: int
+    items: list[IfoodItem]
+
+
+class IfoodUploadOut(BaseModel):
+    rows: int
+    ignored: int
+    message: str
 
 
 class OverviewMonth(BaseModel):

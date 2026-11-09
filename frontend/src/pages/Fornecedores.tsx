@@ -3,27 +3,68 @@ import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, 
 import { ClassBadge, EmptyState, PageHeader, Panel, Skeleton } from "@/components/common";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useSuppliers } from "@/lib/queries";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { apiPut, errorMessage } from "@/lib/api";
+import { qk, useSupplierSectors, useSuppliers } from "@/lib/queries";
+import type { SupplierSector, SupplierSectorIn } from "@/lib/types";
 import { brl, compactBrl, dateBr, monthLabel, pct } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const CLASSES = ["Todas", "A", "B", "C"] as const;
+const SECTOR_OPTS = ["Cozinha", "Bar", "Quiosque", "Salão", "Estoque"];
+const NONE = "__none";
+
+function SectorPicker({ row }: { row: SupplierSector | undefined }) {
+  const qc = useQueryClient();
+  const save = useMutation({
+    mutationFn: (b: SupplierSectorIn) => apiPut<SupplierSector>("/suppliers/sectors", b),
+    onSuccess: (r) => {
+      toast.success(`${r.fornecedor} → ${r.sector ?? "sem setor"}`);
+      void qc.invalidateQueries({ queryKey: qk.supplierSectors });
+      void qc.invalidateQueries({ queryKey: qk.sectorCmv });
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  if (!row) return <span className="text-xs text-slate-600">—</span>;
+  return (
+    <div className="flex items-center gap-1">
+      <Select value={row.sector ?? NONE} onValueChange={(v: string) => save.mutate({ fornecedor: row.fornecedor, sector: v === NONE ? null : v })}>
+        <SelectTrigger size="sm" className={cn("w-28", !row.sector && "border-amber/50 text-amber")} data-testid={`supplier-sector-${row.fornecedor}`}>
+          <SelectValue>{(v: string) => (v === NONE ? "Sem setor" : v)}</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={NONE}>Sem setor</SelectItem>
+          {SECTOR_OPTS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      {row.auto && row.sector && <span className="text-[9px] uppercase text-slate-500" title="Sugerido pelo nome do fornecedor">auto</span>}
+    </div>
+  );
+}
 
 export default function Fornecedores() {
   const { data, isLoading, isError } = useSuppliers();
   const [q, setQ] = useState("");
   const [classe, setClasse] = useState<(typeof CLASSES)[number]>("Todas");
+  const [fSector, setFSector] = useState("todos");
+  const { data: sectorRows } = useSupplierSectors(true);
+  const sectorOf = useMemo(() => new Map((sectorRows ?? []).map((r) => [r.fornecedor, r])), [sectorRows]);
   const suppliers = useMemo(() => (isError ? [] : (data?.suppliers ?? [])), [isError, data]);
   const filtered = useMemo(
-    () => suppliers.filter((s) => (classe === "Todas" || s.classe === classe) && s.fornecedor.toLowerCase().includes(q.toLowerCase())),
-    [suppliers, q, classe],
+    () => suppliers.filter((s) => {
+      const sec = sectorOf.get(s.fornecedor)?.sector ?? NONE;
+      return (classe === "Todas" || s.classe === classe) && s.fornecedor.toLowerCase().includes(q.toLowerCase()) && (fSector === "todos" || sec === fSector);
+    }),
+    [suppliers, q, classe, fSector, sectorOf],
   );
   const pareto = suppliers.slice(0, 20).map((s) => ({ name: s.fornecedor.slice(0, 14), Total: s.total, Acumulado: +(s.acumulado * 100).toFixed(1) }));
   const months = data?.months ?? [];
 
   return (
     <div>
-      <PageHeader eyebrow="Compras" title="Curva ABC de Fornecedores" subtitle="Classe A = fornecedores que somam até 80% das compras, B até 95%, C o restante." />
+      <PageHeader eyebrow="Compras" title="Curva ABC de Fornecedores" subtitle="Classe A = fornecedores que somam até 80% das compras, B até 95%, C o restante. O setor de cada fornecedor define as compras do CMV por setor." />
       {isLoading ? (
         <Skeleton className="h-72" />
       ) : suppliers.length === 0 ? (
@@ -73,6 +114,14 @@ export default function Fornecedores() {
                     </button>
                   ))}
                 </div>
+                <Select value={fSector} onValueChange={(v: string) => setFSector(v)}>
+                  <SelectTrigger size="sm" className="w-32" data-testid="abc-filter-sector"><SelectValue>{(v: string) => (v === "todos" ? "Setor" : v === NONE ? "Sem setor" : v)}</SelectValue></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos setores</SelectItem>
+                    <SelectItem value={NONE}>Sem setor</SelectItem>
+                    {SECTOR_OPTS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                  </SelectContent>
+                </Select>
                 <Input data-testid="abc-search-input" placeholder="Buscar fornecedor" value={q} onChange={(e) => setQ(e.target.value)} className="h-8 w-48" />
               </div>
             }
@@ -81,7 +130,7 @@ export default function Fornecedores() {
               <Table>
                 <TableHeader>
                   <TableRow className="border-slate-800 bg-[#0F172A] hover:bg-[#0F172A]">
-                    {["#", "Fornecedor", "Classe", "Total", "%", "Acum.", "Notas", "Média/nota", ...months.map(monthLabel), "Última"].map((h) => (
+                    {["#", "Fornecedor", "Setor (CMV)", "Classe", "Total", "%", "Acum.", "Notas", "Média/nota", ...months.map(monthLabel), "Última"].map((h) => (
                       <TableHead key={h} className="whitespace-nowrap text-xs uppercase text-slate-400">{h}</TableHead>
                     ))}
                   </TableRow>
@@ -91,6 +140,7 @@ export default function Fornecedores() {
                     <TableRow key={s.fornecedor} data-testid={`abc-row-${s.rank}`} className="border-slate-800/70 hover:bg-slate-800/30">
                       <TableCell className="num text-slate-500">{s.rank}</TableCell>
                       <TableCell className="max-w-[240px] truncate font-medium" title={s.fornecedor}>{s.fornecedor}</TableCell>
+                      <TableCell><SectorPicker row={sectorOf.get(s.fornecedor)} /></TableCell>
                       <TableCell><ClassBadge classe={s.classe} /></TableCell>
                       <TableCell className="num text-right">{brl(s.total)}</TableCell>
                       <TableCell className="num text-right">{pct(s.pct)}</TableCell>
