@@ -52,7 +52,7 @@ const GROUPS: Record<string, { label: string; match: (s: ReqStatus) => boolean }
   ajuste: { label: "Rascunho / ajuste / rejeitadas", match: (s) => ["rascunho", "devolvida", "rejeitada"].includes(s) },
 };
 const ALL = "todos";
-const isStock = (me: Me) => me.role === "gerente" || me.role === "alimentador";
+const isStock = (me: Me) => me.perms.stock;
 const invalidate = (qc: ReturnType<typeof useQueryClient>) => [qk.requisitions, qk.notifications].forEach((k) => void qc.invalidateQueries({ queryKey: k }));
 type EditorLine = ReqLineIn & { key: string };
 const toLines = (items: ReqLineIn[]): EditorLine[] => items.map(({ item, descricao, um, qty: q, qr_code }) => ({ item, descricao, um, qty: q, qr_code, key: crypto.randomUUID() }));
@@ -75,7 +75,8 @@ function exportCsv(list: Requisition[]) {
 function Editor({ me, openSectors, editing, template, onDone }: { me: Me; openSectors: string[]; editing: Requisition | null; template: Requisition | null; onDone: () => void }) {
   const qc = useQueryClient();
   const base = editing ?? template;
-  const [sector, setSector] = useState(base?.sector && SECTORS.includes(base.sector) ? base.sector : me.role === "chefe" ? (me.sector ?? "") : "");
+  const mySectors = SECTORS.filter((s) => me.perms.op_sectors.includes(s));
+  const [sector, setSector] = useState(base?.sector && mySectors.includes(base.sector) ? base.sector : mySectors.length === 1 ? mySectors[0] : "");
   const [priority, setPriority] = useState<"normal" | "urgente">(base?.priority ?? "normal");
   const [lines, setLines] = useState<EditorLine[]>(toLines(base?.items ?? []));
   const [note, setNote] = useState(editing?.note ?? (template ? `Nova a partir da Nº ${template.number}` : ""));
@@ -112,7 +113,6 @@ function Editor({ me, openSectors, editing, template, onDone }: { me: Me; openSe
     onError: (e) => toast.error(errorMessage(e)),
   });
   const busy = save.isPending || check.isPending || merge.isPending;
-  const chefLocked = me.role === "chefe";
 
   return (
     <Panel title={editing ? `Editar requisição Nº ${editing.number}` : "Nova requisição"} testId="requisition-editor">
@@ -120,8 +120,8 @@ function Editor({ me, openSectors, editing, template, onDone }: { me: Me; openSe
         <div>
           <Label className="mb-2 text-xs uppercase tracking-wider text-slate-400">Setor de origem</Label>
           <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap" data-testid="requisition-sector-selector">
-            {(chefLocked ? [me.sector ?? ""] : SECTORS).map((s) => (
-              <button key={s} type="button" data-testid={`requisition-sector-${s}`} disabled={chefLocked} onClick={() => setSector(s)}
+            {mySectors.map((s) => (
+              <button key={s} type="button" data-testid={`requisition-sector-${s}`} disabled={mySectors.length === 1} onClick={() => setSector(s)}
                 className={cn("min-h-11 rounded-lg border px-3 py-2 text-sm transition-[border-color,background-color] duration-150",
                   sector === s ? "border-amber bg-amber/10 text-amber" : "border-slate-800 text-slate-300 hover:border-slate-600")}>
                 {s}{openSectors.includes(s) && <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald align-middle" />}
@@ -173,7 +173,7 @@ function Editor({ me, openSectors, editing, template, onDone }: { me: Me; openSe
           <Button size="lg" variant="outline" data-testid="requisition-draft-button" disabled={!sector || busy} onClick={() => save.mutate(body(false))}>Salvar rascunho</Button>
           <Button size="lg" variant="ghost" data-testid="requisition-cancel-button" onClick={onDone}>Cancelar</Button>
         </div>
-        {me.role === "alimentador" && sector && (
+        {me.role === "alimentador" && me.perms.stock && sector && (
           <p className="text-xs text-slate-400" data-testid="requisition-mode-hint">
             {openSectors.includes(sector) ? `${sector} está em horário livre — será aprovada automaticamente.` : "Será enviada para aprovação do Gerente."}
           </p>
@@ -289,7 +289,7 @@ function Card({ r, me, highlight, onEdit, onCopy }: { r: Requisition; me: Me; hi
     onError: (e) => toast.error(errorMessage(e)),
   });
   const isOwner = r.requested_by === me.email;
-  const g = me.role === "gerente";
+  const g = me.perms.approve;
   const stock = isStock(me);
   const missing = r.items.filter((i) => i.disponibilidade === "sem_estoque" || i.disponibilidade === "parcial").length;
   const btn = (a: ReqAction, label: string, Icon: typeof Check, variant: "default" | "outline" | "destructive" = "outline") => (
@@ -360,7 +360,7 @@ function Card({ r, me, highlight, onEdit, onCopy }: { r: Requisition; me: Me; hi
             {r.status === "rejeitada" && (isOwner || g) && (
               <Button size="sm" variant="outline" className="min-h-10" data-testid={`requisition-copy-${r.id}`} onClick={() => onCopy(r)}><CopyPlus className="mr-1 h-4 w-4" />Criar nova corrigida</Button>
             )}
-            {me.role !== "alimentador" && <Button size="sm" variant="outline" className="min-h-10" data-testid={`requisition-pdf-${r.id}`} disabled={pdfBusy} onClick={() => void pdf()}>{pdfBusy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FileDown className="mr-1 h-4 w-4" />}PDF</Button>}
+            {me.perms.print && <Button size="sm" variant="outline" className="min-h-10" data-testid={`requisition-pdf-${r.id}`} disabled={pdfBusy} onClick={() => void pdf()}>{pdfBusy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FileDown className="mr-1 h-4 w-4" />}PDF</Button>}
             {g && btn("excluir", "Excluir", Trash2, "destructive")}
           </div>
         </div>
@@ -433,15 +433,15 @@ export default function Requisicoes() {
     .sort((a, b) => Number(b.priority === "urgente" && b.status !== "entregue") - Number(a.priority === "urgente" && a.status !== "entregue")),
   [items, fGroup, fPrio, fSector, fFrom, fTo]);
   if (!me) return null;
-  const canExport = me.role !== "alimentador";
+  const canExport = me.perms.print;
   const counts = Object.fromEntries(Object.entries(GROUPS).map(([k, g]) => [k, items.filter((r) => g.match(r.status)).length]));
 
   return (
     <div>
       <PageHeader eyebrow="Estoque" title="Requisições"
-        subtitle={me.role === "gerente" ? "Todas as requisições dos setores — aprove, acompanhe a separação e a entrega."
-          : me.role === "alimentador" ? "Estoque: separe os itens, marque o que não tem e devolva o status ao setor (Em preparo → Pronto → Entregue)."
-            : `Requisições do setor ${me.sector ?? ""}.`}
+        subtitle={me.perms.approve ? "Todas as requisições dos setores — aprove, acompanhe a separação e a entrega."
+          : me.perms.stock ? "Estoque: separe os itens, marque o que não tem e devolva o status ao setor (Em preparo → Pronto → Entregue)."
+            : `Requisições de ${me.perms.op_sectors.join(" + ")}.`}
         actions={<>
           <Button size="lg" className="min-h-12 w-full sm:w-auto" data-testid="requisition-new-button" onClick={() => { setTemplate(null); setEditing("new"); }}><Plus className="mr-2 h-5 w-5" />Nova Requisição</Button>
           {canExport && <Button variant="outline" size="lg" data-testid="requisition-export-button" disabled={!filtered.length} onClick={() => exportCsv(filtered)}><Download className="mr-2 h-4 w-4" />Exportar CSV</Button>}
@@ -470,10 +470,10 @@ export default function Requisicoes() {
                   <SelectTrigger size="sm" className="w-32" data-testid="requisition-filter-priority"><SelectValue>{(v: string) => (v === ALL ? "Prioridade" : v)}</SelectValue></SelectTrigger>
                   <SelectContent><SelectItem value={ALL}>Todas</SelectItem><SelectItem value="urgente">Urgente</SelectItem><SelectItem value="normal">Normal</SelectItem></SelectContent>
                 </Select>
-                {isStock(me) && (
+                {(isStock(me) || me.perms.op_sectors.length > 1) && (
                   <Select value={fSector} onValueChange={(v: string) => setFSector(v)}>
                     <SelectTrigger size="sm" className="w-32" data-testid="requisition-filter-sector"><SelectValue>{(v: string) => (v === ALL ? "Setor" : v)}</SelectValue></SelectTrigger>
-                    <SelectContent><SelectItem value={ALL}>Todos</SelectItem>{SECTORS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                    <SelectContent><SelectItem value={ALL}>Todos</SelectItem>{SECTORS.filter((s) => me.perms.op_sectors.includes(s)).map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                   </Select>
                 )}
                 <Input type="date" className="h-8 w-36" aria-label="De" data-testid="requisition-filter-from" value={fFrom} onChange={(e) => setFFrom(e.target.value)} />
@@ -491,7 +491,7 @@ export default function Requisicoes() {
             ) : <EmptyState title="Nenhuma requisição" detail="Toque em Nova Requisição ou gere pela Sugestão de Pedidos." testId="requisition-empty" />}
           </Panel>
         </div>
-        {me.role === "gerente" && win && <div className="min-w-0"><WindowsEditor key={JSON.stringify(win.windows)} data={win} /></div>}
+        {me.perms.manage && win && <div className="min-w-0"><WindowsEditor key={JSON.stringify(win.windows)} data={win} /></div>}
       </div>
     </div>
   );

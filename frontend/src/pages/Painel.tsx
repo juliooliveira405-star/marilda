@@ -25,11 +25,11 @@ function SectorCmvKpi() {
 function PainelSetor() {
   const { data: me } = useMe();
   const { data, isLoading } = useOverview();
-  const sectorCmv = me?.role === "chefe" && ["Cozinha", "Bar", "Quiosque"].includes(me.sector ?? "");
+  const sectorCmv = !!me?.perms.costs;
   const open = (data?.months ?? []).filter((m) => m.alerta_parcial);
   return (
     <div>
-      <PageHeader eyebrow={me?.sector ? `Setor ${me.sector}` : "Locale POA"} title="Painel"
+      <PageHeader eyebrow={me?.role_label ?? "Locale POA"} title="Painel"
         subtitle="Situação dos meses, estoque e requisições do seu perfil." />
       {isLoading ? <Skeleton className="h-40" /> : (
         <div className="space-y-6">
@@ -70,7 +70,7 @@ function PainelSetor() {
 export default function Painel() {
   const { data: me } = useMe();
   if (!me) return null;
-  return me.role === "gerente" ? <PainelGerente /> : <PainelSetor />;
+  return me.perms.full ? <PainelGerente /> : <PainelSetor />;
 }
 
 function MonthlyReportButton({ months }: { months: { month: string; label: string }[] }) {
@@ -104,7 +104,7 @@ function MonthlyReportButton({ months }: { months: { month: string; label: strin
 function PainelGerente() {
   const { data, isLoading, isError } = useDashboard();
   const { data: me } = useMe();
-  const canFeed = me?.role === "gerente" || me?.role === "alimentador";
+  const canFeed = !!me?.perms.upload;
   const months = isError ? [] : (data?.months ?? []);
   const max = data?.settings.cmv_meta_max ?? 0.3;
   const min = data?.settings.cmv_meta_min ?? 0.28;

@@ -49,10 +49,11 @@ api_router.include_router(requisitions.router)
 api_router.include_router(ifood.router)
 api_router.include_router(reports.router)
 
+_origins = [o.strip() for o in os.environ.get('CORS_ORIGINS', '*').split(',') if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_credentials=_origins != ["*"],  # auth is a Bearer header; never reflect "*" with credentials
+    allow_origins=_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

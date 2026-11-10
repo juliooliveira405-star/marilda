@@ -7,7 +7,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from lib.auth import require_role
+from lib.auth import require_perm, require_role
+from lib.sectors import can_ifood
 from lib.db import db
 from lib.ingest import now_iso
 from lib.parsers import _match_header, load_tables, norm, to_date, to_float
@@ -96,7 +97,7 @@ async def save_map(body: IfoodMapIn, member: dict = Depends(manager)):
 
 
 @router.get("/ifood/summary", response_model=IfoodSummary)
-async def summary(month: Optional[str] = None, _: dict = Depends(manager)):
+async def summary(month: Optional[str] = None, _: dict = Depends(require_perm(can_ifood))):
     cfg = await get_config()
     months = sorted(m for m in await db.ifood_orders.distinct("month") if m)
     q = {"month": month} if month else {}

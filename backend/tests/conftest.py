@@ -45,3 +45,38 @@ async def aclient():
 
 
 # --- app-specific fixtures below this line ---
+
+import functools
+import subprocess
+
+TESTS_DIR = os.path.dirname(__file__)
+
+
+@functools.lru_cache(maxsize=None)
+def _token(role: str) -> str:
+    """Fresh ~10min Clerk session JWT for a seeded clerk_test user (gerente|alimentador|chefe|pendente)."""
+    out = subprocess.run(["python", os.path.join(TESTS_DIR, "clerk_tokens.py"), role], capture_output=True, text=True, timeout=30, check=True)
+    return out.stdout.strip()
+
+
+def auth_client(role: str) -> httpx.Client:
+    """httpx.Client rooted at /api with a fresh bearer token for the given seeded role."""
+    return httpx.Client(base_url=API_URL, timeout=30.0, headers={"Authorization": f"Bearer {_token(role)}"})
+
+
+@pytest.fixture
+def gerente_client():
+    with auth_client("gerente") as c:
+        yield c
+
+
+@pytest.fixture
+def alimentador_client():
+    with auth_client("alimentador") as c:
+        yield c
+
+
+@pytest.fixture
+def chefe_client():
+    with auth_client("chefe") as c:
+        yield c

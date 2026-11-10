@@ -6,6 +6,28 @@ from pydantic import BaseModel, Field
 
 
 # ---------- users / settings ----------
+class Perms(BaseModel):
+    full: bool = False
+    costs: bool = False
+    cost_sectors: list[str] = []
+    stock: bool = False
+    op_sectors: list[str] = []
+    manage: bool = False
+    approve: bool = False
+    ifood: bool = False
+    upload: bool = False
+    upload_kinds: list[str] = []
+    print: bool = False
+
+
+class TempSub(BaseModel):
+    role: Literal["gerente", "alimentador", "chefe"]
+    sector: Optional[str] = None
+    start: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    end: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    motivo: str = Field("", max_length=200)
+
+
 class Me(BaseModel):
     user_id: str
     email: str = ""
@@ -13,6 +35,9 @@ class Me(BaseModel):
     role: str
     role_label: str
     sector: Optional[str] = None
+    perms: Perms = Perms()
+    temp_active: bool = False
+    temp: Optional[TempSub] = None
 
 
 class UserRow(BaseModel):
@@ -21,8 +46,9 @@ class UserRow(BaseModel):
     name: str = ""
     role: str
     role_label: str
-    status: Literal["ativo", "pendente"] = "ativo"
+    status: Literal["ativo", "pendente", "excluido"] = "ativo"
     sector: Optional[str] = None
+    temp: Optional[TempSub] = None
 
 
 class InviteIn(BaseModel):

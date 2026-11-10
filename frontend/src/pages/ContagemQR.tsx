@@ -92,7 +92,8 @@ export default function ContagemQR() {
   const [raw, setRaw] = useState<string | null>(null);
   const [autoKnown, setAutoKnown] = useState(true);
   const [confirmApply, setConfirmApply] = useState(false);
-  const [sector, setSector] = useState<CountSector>(me?.role === "chefe" && PROD_SECTORS.includes(me.sector as CountSector) ? (me.sector as CountSector) : "Estoque");
+  const mySectors = PROD_SECTORS.filter((s) => me?.perms.op_sectors.includes(s));
+  const [sector, setSector] = useState<CountSector>(mySectors.includes("Estoque") ? "Estoque" : (mySectors[0] ?? "Estoque"));
   const monthRow = dash?.months.find((m) => m.month === month);
 
   const add = useMutation({
@@ -145,7 +146,7 @@ export default function ContagemQR() {
               <div>
                 <Label className="mb-2 text-xs uppercase tracking-wider text-slate-400">Setor da produção</Label>
                 <div className="flex flex-wrap gap-1.5" data-testid="count-sector-selector">
-                  {PROD_SECTORS.map((s) => (
+                  {mySectors.map((s) => (
                     <button key={s} type="button" data-testid={`count-sector-${s}`} onClick={() => setSector(s)}
                       className={cn("min-h-10 rounded-lg border px-3 text-xs transition-[border-color,background-color] duration-150",
                         sector === s ? "border-amber bg-amber/10 text-amber" : "border-slate-800 text-slate-400 hover:border-slate-600")}>
@@ -185,7 +186,7 @@ export default function ContagemQR() {
             title={`Contagem ${monthLabel(month)} — ${data?.items.length ?? 0} itens`}
             testId="count-summary"
             action={
-              <Button size="sm" data-testid="count-apply-button" disabled={!data?.items.length} onClick={() => setConfirmApply(true)}>
+              me?.perms.stock && <Button size="sm" data-testid="count-apply-button" disabled={!data?.items.length} onClick={() => setConfirmApply(true)}>
                 <CheckCheck className="mr-1 h-4 w-4" /> Aplicar ao inventário
               </Button>
             }

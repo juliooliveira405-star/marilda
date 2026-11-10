@@ -8,11 +8,11 @@ from fastapi.responses import StreamingResponse
 
 from lib import ai, metrics
 from lib.ai import AI_MODELS, generate_insight
-from lib.auth import VIEWERS, require_role
+from lib.auth import VIEWERS, require_perm, require_role
 from lib.db import db
 from lib.ingest import now_iso
 from lib.parsers import month_label
-from lib.sectors import CHEF_SECTORS, CMV_SECTORS, SECTORS, audit, can_see_costs, item_sector, supplier_sector_map
+from lib.sectors import ALL, CMV_SECTORS, SECTORS, audit, can_see_costs, cost_sectors, full_view, item_sector, op_sectors, supplier_sector_map
 from models.schemas import (
     AiModel, AuditRow, Dashboard, Insight, InsightIn, Overview, ReorderResponse, SectorCmv, SupplierSector,
     SupplierSectorIn, SuppliersResponse,
@@ -21,10 +21,11 @@ from models.schemas import (
 router = APIRouter()
 viewer = require_role(*VIEWERS)
 manager = require_role("gerente")
+full = require_perm(full_view, "Só Gerente Geral e Chefe Estoque")
 
 
 @router.get("/dashboard", response_model=Dashboard)
-async def get_dashboard(_: dict = Depends(manager)):
+async def get_dashboard(_: dict = Depends(full)):
     return await metrics.dashboard()
 
 
@@ -32,15 +33,16 @@ async def get_dashboard(_: dict = Depends(manager)):
 async def overview(member: dict = Depends(viewer)):
     """Value-free summary for every profile; Chefe of a cost sector also gets own-sector stock value."""
     months = await metrics.compute_months()
-    sector = member.get("sector") if member["role"] == "chefe" else None
-    reorder = await metrics.compute_reorder(sector=sector)
+    sectors = None if full_view(member) else op_sectors(member)
+    reorder = await metrics.compute_reorder(sector=sectors)
     costs_visible = can_see_costs(member)
+    cs = cost_sectors(member)
     stock = []
-    if member["role"] == "chefe" and costs_visible:
+    if cs != ALL and cs:
         costs = await metrics.cost_map()
         agg: dict[str, dict] = {}
         async for r in db.inventory.find({}, {"_id": 0, "month": 1, "item": 1, "qty": 1, "ggrupo": 1, "grupo": 1, "sgrupo": 1}):
-            if item_sector(r.get("ggrupo", ""), r.get("grupo", ""), r.get("sgrupo", "")) != sector:
+            if item_sector(r.get("ggrupo", ""), r.get("grupo", ""), r.get("sgrupo", "")) not in cs:
                 continue
             a = agg.setdefault(r["month"], {"valor": 0.0, "itens": 0})
             q, c = r.get("qty") or 0, costs.get(r["item"])
@@ -53,27 +55,28 @@ async def overview(member: dict = Depends(viewer)):
         "months": [{**{k: m[k] for k in ("month", "label", "status", "alerta_parcial", "pendencias")},
                     "tem_inventario": m["itens_inventario"] > 0} for m in months],
         "zerados": reorder["counts"].get("ZERADO", 0), "baixou_forte": reorder["counts"].get("BAIXOU FORTE", 0),
-        "sector": sector, "costs_visible": costs_visible, "sector_stock": stock,
-        "itens_sem_custo": sem_custo if member["role"] == "gerente" else [],
+        "sector": ", ".join(sectors) if sectors else None, "costs_visible": costs_visible, "sector_stock": stock,
+        "itens_sem_custo": sem_custo if full_view(member) else [],
     }
 
 
 @router.get("/suppliers", response_model=SuppliersResponse)
-async def get_suppliers(_: dict = Depends(manager)):
+async def get_suppliers(_: dict = Depends(full)):
     return await metrics.compute_suppliers()
 
 
 @router.get("/cmv/sector", response_model=SectorCmv)
 async def sector_cmv(sector: Optional[str] = None, member: dict = Depends(viewer)):
-    """Gerente: any CMV sector. Chefe Cozinha/Bar/Quiosque: only own sector. Others: 403."""
-    if member["role"] == "chefe":
-        sector = member.get("sector")
-    elif member["role"] != "gerente":
+    """Gerente Geral / Chefe Estoque: any CMV sector. Chefe Cozinha: Cozinha + Quiosque. Chefe Bar: Bar. Others: 403."""
+    cs = cost_sectors(member)
+    if not cs:
         raise HTTPException(status_code=403, detail="Seu perfil não vê CMV")
-    if sector not in CMV_SECTORS or not can_see_costs(member, sector):
-        raise HTTPException(status_code=403, detail="CMV por setor disponível só para Cozinha, Bar e Quiosque")
+    allowed = CMV_SECTORS if cs == ALL else [s for s in cs if s in CMV_SECTORS]
+    sector = sector or allowed[0]
+    if sector not in allowed:
+        raise HTTPException(status_code=403, detail="CMV deste setor não está liberado para seu perfil")
     data = await metrics.compute_sector_months(sector)
-    if member["role"] != "gerente":
+    if not full_view(member):
         data["compras_nao_alocadas"] = None
         for m in data["months"]:
             m["faturamento"] = None
@@ -81,7 +84,7 @@ async def sector_cmv(sector: Optional[str] = None, member: dict = Depends(viewer
 
 
 @router.get("/suppliers/sectors", response_model=list[SupplierSector])
-async def supplier_sectors(_: dict = Depends(manager)):
+async def supplier_sectors(_: dict = Depends(full)):
     smap = await supplier_sector_map()
     rows = await db.purchases.aggregate([{"$group": {"_id": "$fornecedor", "t": {"$sum": "$valor"}, "rs": {"$first": "$razao_social"}}},
                                          {"$sort": {"t": -1}}]).to_list(None)
@@ -124,12 +127,11 @@ async def set_supplier_sector(body: SupplierSectorIn, member: dict = Depends(man
 @router.get("/reorder", response_model=ReorderResponse)
 async def get_reorder(from_month: Optional[str] = None, to_month: Optional[str] = None, sector: Optional[str] = None,
                       member: dict = Depends(viewer)):
-    if member["role"] == "chefe":
-        sector = member.get("sector")  # chefe always sees only own sector
-    elif sector and sector not in CHEF_SECTORS + ["Estoque"]:
-        sector = None
-    data = await metrics.compute_reorder(from_month, to_month, sector)
-    visible = can_see_costs(member, sector) if member["role"] != "gerente" else True
+    allowed = op_sectors(member)
+    sectors = [sector] if sector in allowed else (None if full_view(member) else allowed)  # chefes/alimentadores: only own sectors
+    data = await metrics.compute_reorder(from_month, to_month, sectors)
+    cs = cost_sectors(member)
+    visible = cs == ALL or (bool(cs) and bool(sectors) and all(s in cs for s in sectors))
     if not visible:
         for i in data["items"]:
             i["custo"] = None
@@ -139,17 +141,17 @@ async def get_reorder(from_month: Optional[str] = None, to_month: Optional[str] 
 
 
 @router.get("/ai/models", response_model=list[AiModel])
-async def ai_models(_: dict = Depends(manager)):
+async def ai_models(_: dict = Depends(full)):
     return [{"id": k, "name": v[2], "badge": v[3]} for k, v in AI_MODELS.items()]
 
 
 @router.get("/insights", response_model=list[Insight])
-async def list_insights(_: dict = Depends(manager)):
+async def list_insights(_: dict = Depends(full)):
     return await db.insights.find({}, {"_id": 0}).sort("created_at", -1).to_list(20)
 
 
 @router.post("/insights", response_model=Insight)
-async def create_insight(body: InsightIn, member: dict = Depends(manager)):
+async def create_insight(body: InsightIn, member: dict = Depends(full)):
     if body.model not in AI_MODELS:
         raise HTTPException(status_code=422, detail="Modelo de IA inválido")
     context = await metrics.ai_context()

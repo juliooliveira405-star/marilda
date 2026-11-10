@@ -21,7 +21,7 @@ from lib.db import db
 from lib.ingest import now_iso
 from lib.metrics import compute_months, cost_map
 from lib.validade import expiring
-from lib.sectors import SECTORS, audit, can_see_costs, notify, role_emails
+from lib.sectors import SECTORS, audit, can_see_costs, is_stock, notify, op_sectors, role_emails, stock_emails
 from models.schemas import (
     DupCheck, DupCheckIn, FulfillIn, Notifications, ReqActionIn, Requisition, RequisitionIn,
 )
@@ -53,10 +53,9 @@ RULES = {
 def scope(member: dict) -> dict:
     if member["role"] == "gerente":
         return {}
-    if member["role"] == "chefe":
-        return {"sector": member.get("sector") or "-"}
-    # Alimentador = estoquista: own drafts + every submitted requisition (to prepare / deliver).
-    return {"$or": [{"requested_by": member.get("email", "")}, {"status": {"$ne": "rascunho"}}]}
+    if is_stock(member):  # Chefe/Alimentador Estoque: own drafts + every submitted requisition (to prepare / deliver)
+        return {"$or": [{"requested_by": member.get("email", "")}, {"status": {"$ne": "rascunho"}}]}
+    return {"sector": {"$in": op_sectors(member) or ["-"]}}  # Cozinha → Cozinha + Quiosque; Bar → Bar; Salão → Salão
 
 
 def present(r: dict, member: dict) -> dict:
@@ -108,7 +107,7 @@ async def _get(rid: str, member: dict) -> dict:
 async def _initial_status(member: dict, sector: str, submit: bool) -> tuple[str, bool]:
     if not submit:
         return "rascunho", False
-    if member["role"] == "alimentador" and sector in open_sectors(await get_windows()):
+    if member["role"] == "alimentador" and is_stock(member) and sector in open_sectors(await get_windows()):
         return "aprovada", True
     return "enviada", False
 
@@ -119,22 +118,24 @@ def _summary(r: dict) -> str:
 
 async def _notify_submitted(r: dict, actor: str) -> None:
     if r["status"] == "enviada":
-        await notify(await role_emails("gerente", "alimentador"), r, f"Nova requisição {_summary(r)} — aguardando aprovação", actor)
+        await notify(await stock_emails(), r, f"Nova requisição {_summary(r)} — aguardando aprovação", actor)
     elif r["status"] == "aprovada":
-        await notify(await role_emails("gerente", "alimentador"), r, f"Nova requisição {_summary(r)} — aprovada automaticamente, separar itens", actor)
+        await notify(await stock_emails(), r, f"Nova requisição {_summary(r)} — aprovada automaticamente, separar itens", actor)
 
 
 @router.post("/requisitions/check", response_model=DupCheck)
 async def check(body: DupCheckIn, member: dict = Depends(viewer)):
-    sector = member.get("sector") if member["role"] == "chefe" else body.sector
+    sector = body.sector
     return {"duplicates": await _duplicates(sector, {i.item for i in body.items}, member)}
 
 
 @router.post("/requisitions", response_model=Requisition)
 async def create(body: RequisitionIn, member: dict = Depends(viewer)):
-    sector = member.get("sector") if member["role"] == "chefe" else body.sector
+    sector = body.sector
     if sector not in SECTORS:
         raise HTTPException(status_code=422, detail="Setor inválido")
+    if sector not in op_sectors(member):
+        raise HTTPException(status_code=403, detail=f"Seu perfil faz requisição só para: {', '.join(op_sectors(member))}")
     if body.submit and not body.items:
         raise HTTPException(status_code=422, detail="Adicione pelo menos um item")
     lines, total = await _lines(body.items)
@@ -201,7 +202,7 @@ async def add_items(rid: str, body: RequisitionIn, member: dict = Depends(viewer
     out = {**r, **upd, "history": r["history"] + [ev]}
     await audit(member, "itens adicionados à requisição", f"Nº {r['number']} +{len(new_lines)}")
     if r["status"] != "rascunho":
-        await notify(await role_emails("gerente", "alimentador") + [r["requested_by"]], out,
+        await notify(await stock_emails() + [r["requested_by"]], out,
                      f"Nº {r['number']} · {r['sector']}: {len(new_lines)} itens adicionados", member.get("email", ""))
     return present(out, member)
 
@@ -223,7 +224,8 @@ async def action(rid: str, body: ReqActionIn, member: dict = Depends(viewer)):
         new = "excluida"
     else:
         roles, starts, new = RULES[a]
-        if role not in roles or st not in starts:
+        allowed = is_stock(member) if roles == STOCK else role in roles
+        if not allowed or st not in starts:
             raise HTTPException(status_code=403, detail="Ação não permitida para seu perfil ou para o status atual")
     if a in ("rejeitar", "devolver", "excluir") and not comment:
         raise HTTPException(status_code=422, detail="Informe o motivo / comentário")
@@ -238,15 +240,16 @@ async def action(rid: str, body: ReqActionIn, member: dict = Depends(viewer)):
         msg = f"Sua requisição Nº {r['number']} ({r['sector']}) {PHRASE[a]}" + (f": “{comment}”" if comment else "")
         await notify([r["requested_by"]], out, msg, me)
         if a == "aprovar":
-            await notify(await role_emails("alimentador"), out, f"Nº {r['number']} aprovada — separar itens para {r['sector']}", me)
+            await notify([e for e in await stock_emails() if e not in await role_emails("gerente")], out,
+                         f"Nº {r['number']} aprovada — separar itens para {r['sector']}", me)
     return present(out, member)
 
 
 @router.put("/requisitions/{rid}/fulfillment", response_model=Requisition)
 async def fulfillment(rid: str, body: FulfillIn, member: dict = Depends(viewer)):
     """Stock marks per item: tem (ok), parcial (qty atendida) ou sem estoque — the requester is notified."""
-    if member["role"] not in STOCK:
-        raise HTTPException(status_code=403, detail="Só o estoque (Gerente/Alimentador) marca a separação")
+    if not is_stock(member):
+        raise HTTPException(status_code=403, detail="Só o Estoque marca a separação")
     r = await _get(rid, member)
     if r["status"] not in ("aprovada", "em_preparo", "comprada", "recebida", "pronto"):
         raise HTTPException(status_code=409, detail="A separação só pode ser marcada depois da aprovação")
@@ -282,7 +285,7 @@ async def list_reqs(status: Optional[str] = None, sector: Optional[str] = None, 
     q: dict = {"status": {"$ne": "excluida"}, **scope(member)}
     if status:
         q["status"] = status
-    if sector and member["role"] in STOCK:
+    if sector and (is_stock(member) or sector in op_sectors(member)):
         q["sector"] = sector
     if priority:
         q["priority"] = priority
@@ -292,7 +295,7 @@ async def list_reqs(status: Optional[str] = None, sector: Optional[str] = None, 
 
 @router.get("/requisitions/{rid}/pdf")
 async def req_pdf(rid: str, member: dict = Depends(viewer)):
-    if member["role"] == "alimentador":
+    if member["role"] not in ("gerente", "chefe"):
         raise HTTPException(status_code=403, detail="Seu perfil não imprime requisições")
     r = present(await _get(rid, member), member)
     data = pdf.requisition_pdf(r)

@@ -1,0 +1,117 @@
+{
+  "iteration": 2,
+  "mode": "generate",
+  "summary": "8 acceptance-matrix criteria exercised: 7 backend pytest files (22 tests, run via -n2 --dist loadscope, all passed, rerun-stable) + 7 named browser checks (all passed on first/second attempt, 2 flaky-selector fixes applied before pass). No pure-UI-only criterion lacked a browser check and no pure-API-only criterion lacked a backend test; the mobile/desktop criterion is UI-only by nature so has a browser check only.",
+  "passed": 14,
+  "failed": 0,
+  "bugs": [],
+  "action_items": [],
+  "retest_needed": false,
+  "checks": [
+    {
+      "criterion": "SEC-001: no Alimentador ever sees unit cost / CMV (API)",
+      "name": "test_tscheck_sec001_cost_hidden.py",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "alimentador token: GET /items?q=a -> 200, all returned items custo=null; POST /qr/resolve -> 200, suggestions custo=null; GET /dashboard -> 403; GET /cmv/sector?sector=Cozinha -> 403. 4/4 tests passed."
+    },
+    {
+      "criterion": "SEC-001: no Alimentador ever sees unit cost / CMV (UI)",
+      "name": "sec001-alimentador-no-cost-leak",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "Alimentador (Clerk ticket login): nav-cmv-estoque/nav-fornecedores/nav-economia/nav-insights/nav-admin all count 0; Sugestão de Pedidos and Requisições body text contain no 'R$'; direct nav to /administracao shows data-testid=no-access screen. 4 screenshots captured."
+    },
+    {
+      "criterion": "Chefe Cozinha sees CMV only of Cozinha + Quiosque + iFood read (API)",
+      "name": "test_tscheck_chefe_cmv_scope.py",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "chefe token: GET /cmv/sector?sector=Cozinha -> 200, ?sector=Quiosque -> 200, ?sector=Bar -> 403; GET /ifood/summary -> 200 but GET /ifood/config -> 403; GET /users -> 403. 4/4 tests passed."
+    },
+    {
+      "criterion": "Chefe Cozinha sees CMV only of Cozinha + Quiosque + iFood read (UI)",
+      "name": "chefe-cmv-scope-ui",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "chefe session: nav-cmv-estoque and nav-ifood visible, nav-admin count 0. CMV & Estoque page sector-cmv-select opened: only 'Cozinha'/'Quiosque' options rendered. Direct nav to /administracao -> no-access screen."
+    },
+    {
+      "criterion": "Gerente Geral manages users: role/sector PATCH, sector chip sets, temp substitution rejects past-end, self-delete guard, non-gerente forbidden (API)",
+      "name": "test_tscheck_user_management.py",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "gerente token: PATCH /users/{alimentador}/role {role:alimentador,sector:Cozinha} -> 200 then restored to Estoque -> 200; PUT /users/{id}/temp with end<start-of-validity (2020-01-02 already past) -> 422 rejected, then DELETE /temp -> 200 to ensure no stray temp; chefe token PATCH same endpoint -> 403; gerente DELETE /users/{own_id} -> 409 (keeps one manager). 4/4 tests passed. Did not delete/restore the seeded chefe/alimentador accounts themselves (out of scope per cleanup risk)."
+    },
+    {
+      "criterion": "Gerente Geral manages users (UI: role dialog role+sector options, temp dialog validation)",
+      "name": "admin-role-sector-dialogs",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "gerente Administração page: 'Alterar perfil' dialog for alimentador+clerk_test shows Gerente Geral/Chefe/Alimentador; selecting Chefe shows sector chips Cozinha/Bar/Estoque/Salão/Quiosque; selecting Alimentador shows Cozinha/Bar/Estoque/Salão (no Quiosque) -- matches spec. 'Substituição' dialog: Chefe + Bar + start 2020-01-01 / end 2020-01-02 + motivo, Salvar substituição -> backend returned 422 (console error captured), dialog remained open (save rejected) confirming past-date rejection."
+    },
+    {
+      "criterion": "SEC-002: validade baixa scoped by sector (API)",
+      "name": "test_tscheck_sec002_validade_sector.py",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "Created a tscheck QR label + a count entry with sector=Bar (via gerente). POST /validades/{code}/baixa as chefe (op_sectors=Cozinha,Quiosque,Estoque... not Bar) -> 404; same call as gerente -> 200. 2/2 tests passed."
+    },
+    {
+      "criterion": "SEC-003: only Estoque applies counts; counting limited to own sectors (API)",
+      "name": "test_tscheck_sec003_counts_apply.py",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "chefe (Cozinha, non-stock) token: POST /counts/2026-01/apply -> 403; POST /counts {sector:Bar} -> 403 (outside op_sectors); POST /counts {sector:Cozinha} -> 200. 3/3 tests passed."
+    },
+    {
+      "criterion": "SEC-003: apply/sector-scope hidden in UI for non-stock users",
+      "name": "sec003-counts-apply-hidden-for-chefe",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "chefe Contagem por QR page: count-sector-Cozinha and count-sector-Quiosque visible; count-sector-Bar and count-sector-Salão count=0; count-apply-button (Aplicar ao inventário) count=0 for chefe Cozinha."
+    },
+    {
+      "criterion": "Requisições respect sector scope (API)",
+      "name": "test_tscheck_requisicoes_scope.py",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "alimentador switched to sector Cozinha (restored to Estoque in a finally-equivalent fixture teardown): POST /requisitions {sector:Cozinha} -> 200 draft created then soft-deleted by gerente via POST /requisitions/{id}/action {action:excluir}; POST /requisitions {sector:Bar} -> 403. chefe (Cozinha) GET /requisitions -> 200, every row sector in (Cozinha, Quiosque). 3/3 tests passed."
+    },
+    {
+      "criterion": "Requisições respect sector scope (UI sector selector)",
+      "name": "requisicoes-sector-scope-ui",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "alimentador switched to sector Cozinha via gerente API, signed in: Nova Requisição sector selector shows requisition-sector-Cozinha and requisition-sector-Quiosque, count 0 for Bar and Salão. Sector restored to Estoque afterward (verified Estoque via API after the run)."
+    },
+    {
+      "criterion": "App works on phone and desktop after login (no-access on forbidden direct URL, menu scoped by role)",
+      "name": "mobile-desktop-login-and-nav",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "390x844 chefe: mobile-menu-button opens drawer showing nav-cmv-estoque, nav-admin absent; direct nav to /administracao -> no-access screen. 1280x800 gerente: nav-admin visible on Painel load. No page errors (pageerror listener) thrown across the flow."
+    },
+    {
+      "criterion": "Alimentador Salão uploads only faturamento (API)",
+      "name": "test_tscheck_upload_salao.py",
+      "lane": "backend",
+      "status": "passed",
+      "evidence": "alimentador switched to sector Salão: GET /me -> perms.upload_kinds == ['faturamento']; POST /uploads kind=compras (multipart csv) -> 403. Sector restored to Estoque in fixture teardown. 2/2 tests passed."
+    },
+    {
+      "criterion": "Alimentador Salão uploads only faturamento (UI)",
+      "name": "alimentador-salao-upload-faturamento-only",
+      "lane": "browser",
+      "status": "passed",
+      "evidence": "alimentador switched to sector Salão, signed in, /carregar-dados upload-type-selector shows only upload-kind-faturamento; upload-kind-compras/inventario/custos/completa all count 0. Sector restored to Estoque afterward (verified via API)."
+    }
+  ],
+  "notes": [
+    "Matrix had exactly 8 criteria; produced 7 backend pytest files + 7 browser checks = 14 artifacts (2 criteria -- SEC-001 and Chefe CMV scope, SEC-003, and Requisicoes scope, and Upload Salao -- got both backend+browser lanes; SEC-002 is API-only per matrix wording so backend-only; the mobile/desktop criterion is UI-only so browser-only).",
+    "Two browser checks needed one selector fix each before passing (admin-role-sector-dialogs: scoping clicks to the dialog container instead of the whole page which was hitting a same-labelled background control; mobile-desktop-login-and-nav: disambiguating duplicate nav-cmv-estoque nodes between the hidden desktop sidebar and the mobile drawer with .last()). Both are normal Playwright strict-mode fixes, not app bugs.",
+    "All sector/role mutations on the seeded alimentador+clerk_test account (switch to Cozinha/Salão for scope tests) were restored to {role: alimentador, sector: Estoque} and verified via a fresh /users read at the end of the session. No temp substitution was left stored (the only PUT /temp call used a deliberately invalid past-date payload that the backend rejected with 422, and a DELETE /temp cleanup call was issued regardless). One throwaway requisition (tscheck-requisicoes-scope, sector Cozinha) was created and soft-deleted (action=excluir) by the gerente account within the same test; no real/seeded data was modified.",
+    "Backend suite uses the repo's pytest-xdist config (-n 2 --dist loadscope) unmodified; added a small conftest.py helper (auth_client/gerente_client/alimentador_client/chefe_client fixtures) that mints fresh ~10min Clerk session JWTs via tests/clerk_tokens.py at test time, so the suite is not sensitive to ticket/token expiry on rerun.",
+    "Ran sec001-alimentador-no-cost-leak once against the public preview URL (https://sheet-to-app-120--28flwr1y.preview.emergentagent.com) per instructions; identical pass."
+  ]
+}

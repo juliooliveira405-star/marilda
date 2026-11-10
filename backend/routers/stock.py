@@ -13,7 +13,7 @@ from lib.dates import now_local
 from lib.db import db
 from lib.ingest import now_iso
 from lib.parsers import month_label, norm
-from lib.sectors import SECTORS, audit
+from lib.sectors import SECTORS, audit, can_see_costs, is_stock, item_sector, op_sectors
 from models.schemas import (
     CatalogItem, CountApplyOut, CountEntry, CountEntryIn, CountSummary, QrLabel, QrLabelIn,
     QrPhotoOut, QrResolveIn, QrResolveOut, WindowsIn, WindowsResponse,
@@ -28,7 +28,8 @@ viewer = require_role(*VIEWERS)
 async def load_catalog() -> list[dict]:
     items: dict[str, dict] = {}
     async for c in db.costs.find({}, {"_id": 0}):
-        items[c["item"]] = {"item": c["item"], "descricao": c.get("descricao", ""), "um": "", "grupo": c.get("grupo", ""), "custo": c.get("custo")}
+        items[c["item"]] = {"item": c["item"], "descricao": c.get("descricao", ""), "um": "", "grupo": c.get("grupo", ""), "custo": c.get("custo"),
+                            "setor": item_sector(c.get("ggrupo", ""), c.get("grupo", ""), c.get("sgrupo", ""))}
     months = sorted(await db.inventory.distinct("month"))
     if months:
         async for r in db.inventory.find({"month": months[-1]}, {"_id": 0}):
@@ -36,21 +37,27 @@ async def load_catalog() -> list[dict]:
             cur["um"] = cur["um"] or r.get("um", "")
             cur["grupo"] = r.get("sgrupo") or r.get("grupo") or cur["grupo"]
             cur["descricao"] = cur["descricao"] or r.get("descricao", "")
+            cur["setor"] = item_sector(r.get("ggrupo", ""), r.get("grupo", ""), r.get("sgrupo", ""))
     return sorted(items.values(), key=lambda x: x["descricao"])
 
 
+def present_items(cat: list[dict], member: dict) -> list[dict]:
+    """SEC-001: unit cost only for whoever may see values of that item's sector (never Alimentador / Chefe Salão)."""
+    return [{**c, "custo": c.get("custo") if can_see_costs(member, c.get("setor") or "Estoque") else None} for c in cat]
+
+
 @router.get("/items", response_model=list[CatalogItem])
-async def list_items(q: str = "", _: dict = Depends(viewer)):
+async def list_items(q: str = "", member: dict = Depends(viewer)):
     cat = await load_catalog()
     if q.strip():
         nq = norm(q)
         cat = [c for c in cat if nq in norm(c["descricao"]) or nq == norm(c["item"])]
-    return cat[:50]
+    return present_items(cat[:50], member)
 
 
 # ---------- QR labels ----------
 @router.post("/qr/resolve", response_model=QrResolveOut)
-async def resolve_qr(body: QrResolveIn, _: dict = Depends(viewer)):
+async def resolve_qr(body: QrResolveIn, member: dict = Depends(viewer)):
     code = qr.label_code(body.raw)
     parsed = qr.parse_label(body.raw)
     label = await db.qr_labels.find_one({"code": code}, {"_id": 0})
@@ -61,7 +68,7 @@ async def resolve_qr(body: QrResolveIn, _: dict = Depends(viewer)):
         if alias:
             suggestions = [c for c in cat if c["item"] == alias["item"]]
         suggestions += [c for c in qr.suggest(parsed["produto"], cat) if c not in suggestions]
-    return {"code": code, "known": label is not None, "label": label, "parsed": parsed, "suggestions": suggestions[:6]}
+    return {"code": code, "known": label is not None, "label": label, "parsed": parsed, "suggestions": present_items(suggestions[:6], member)}
 
 
 @router.post("/qr/labels", response_model=QrLabel)
@@ -118,6 +125,8 @@ async def label_photo(file: UploadFile = File(...), qr_text: str = Form(""), mem
 # ---------- counts ----------
 @router.post("/counts", response_model=CountEntry)
 async def add_count(body: CountEntryIn, member: dict = Depends(viewer)):
+    if (body.sector or "Estoque") not in op_sectors(member):
+        raise HTTPException(status_code=403, detail=f"Seu perfil conta só: {', '.join(op_sectors(member))}")
     if body.qr_code and await db.count_entries.find_one({"month": body.month, "qr_code": body.qr_code, "deleted": {"$ne": True}}):
         raise HTTPException(status_code=409, detail="Esta etiqueta já foi contada nesta sessão — não foi somada de novo")
     origem = "qr" if body.qr_code else "manual"
@@ -154,6 +163,8 @@ async def delete_count(entry_id: str, member: dict = Depends(viewer)):
 
 @router.post("/counts/{month}/apply", response_model=CountApplyOut)
 async def apply_counts(month: str, member: dict = Depends(viewer)):
+    if not is_stock(member):  # SEC-003: only stock (Gerente Geral, Chefe/Alimentador Estoque) writes the month's inventory
+        raise HTTPException(status_code=403, detail="Só o Estoque aplica a contagem ao inventário")
     entries = await db.count_entries.find({"month": month, "deleted": {"$ne": True}}, {"_id": 0}).to_list(20000)
     if not entries:
         raise HTTPException(status_code=422, detail="Nenhuma leitura neste mês")

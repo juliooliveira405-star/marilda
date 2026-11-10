@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { apiPost, apiPut, errorMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { CheckCheck, Loader2, Sparkles } from "lucide-react";
-import { qk, useSupplierSectors, useSuppliers } from "@/lib/queries";
+import { qk, useMe, useSupplierSectors, useSuppliers } from "@/lib/queries";
 import type { SupplierSector, SupplierSectorIn } from "@/lib/types";
 import { brl, compactBrl, dateBr, monthLabel, pct } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -18,7 +18,7 @@ const CLASSES = ["Todas", "A", "B", "C"] as const;
 const SECTOR_OPTS = ["Cozinha", "Bar", "Quiosque", "Salão", "Estoque"];
 const NONE = "__none";
 
-function SectorPicker({ row }: { row: SupplierSector | undefined }) {
+function SectorPicker({ row, canEdit }: { row: SupplierSector | undefined; canEdit: boolean }) {
   const qc = useQueryClient();
   const save = useMutation({
     mutationFn: (b: SupplierSectorIn) => apiPut<SupplierSector>("/suppliers/sectors", b),
@@ -30,6 +30,7 @@ function SectorPicker({ row }: { row: SupplierSector | undefined }) {
     onError: (e) => toast.error(errorMessage(e)),
   });
   if (!row) return <span className="text-xs text-slate-600">—</span>;
+  if (!canEdit) return <span className="text-xs text-slate-300">{row.sector ?? "Sem setor"}</span>;
   return (
     <div className="flex items-center gap-1">
       <Select value={row.sector ?? NONE} onValueChange={(v: string) => save.mutate({ fornecedor: row.fornecedor, sector: v === NONE ? null : v })}>
@@ -131,6 +132,8 @@ export default function Fornecedores() {
   const [q, setQ] = useState("");
   const [classe, setClasse] = useState<(typeof CLASSES)[number]>("Todas");
   const [fSector, setFSector] = useState("todos");
+  const { data: me } = useMe();
+  const canEdit = !!me?.perms.manage;
   const { data: sectorRows } = useSupplierSectors(true);
   const sectorOf = useMemo(() => new Map((sectorRows ?? []).map((r) => [r.fornecedor, r])), [sectorRows]);
   const suppliers = useMemo(() => (isError ? [] : (data?.suppliers ?? [])), [isError, data]);
@@ -166,7 +169,7 @@ export default function Fornecedores() {
             ))}
           </div>
 
-          {sectorRows && <ReviewPanel rows={sectorRows} />}
+          {sectorRows && canEdit && <ReviewPanel rows={sectorRows} />}
 
           <Panel title="Pareto — top 20" testId="abc-pareto-chart">
             <div className="h-72">
@@ -224,7 +227,7 @@ export default function Fornecedores() {
                     <TableRow key={s.fornecedor} data-testid={`abc-row-${s.rank}`} className="border-slate-800/70 hover:bg-slate-800/30">
                       <TableCell className="num text-slate-500">{s.rank}</TableCell>
                       <TableCell className="max-w-[240px] truncate font-medium" title={s.fornecedor}>{s.fornecedor}</TableCell>
-                      <TableCell><SectorPicker row={sectorOf.get(s.fornecedor)} /></TableCell>
+                      <TableCell><SectorPicker row={sectorOf.get(s.fornecedor)} canEdit={canEdit} /></TableCell>
                       <TableCell><ClassBadge classe={s.classe} /></TableCell>
                       <TableCell className="num text-right">{brl(s.total)}</TableCell>
                       <TableCell className="num text-right">{pct(s.pct)}</TableCell>

@@ -2,6 +2,28 @@
 
 export type Role = "gerente" | "alimentador" | "chefe" | "pendente";
 
+export interface Perms {
+  full: boolean;
+  costs: boolean;
+  cost_sectors: string[];
+  stock: boolean;
+  op_sectors: string[];
+  manage: boolean;
+  approve: boolean;
+  ifood: boolean;
+  upload: boolean;
+  upload_kinds: string[];
+  print: boolean;
+}
+
+export interface TempSub {
+  role: "gerente" | "alimentador" | "chefe";
+  sector: string | null;
+  start: string;
+  end: string;
+  motivo: string;
+}
+
 export interface Me {
   user_id: string;
   email: string;
@@ -9,6 +31,9 @@ export interface Me {
   role: Role;
   role_label: string;
   sector: string | null;
+  perms: Perms;
+  temp_active: boolean;
+  temp: TempSub | null;
 }
 
 export interface UserRow {
@@ -17,8 +42,9 @@ export interface UserRow {
   name: string;
   role: Role;
   role_label: string;
-  status: "ativo" | "pendente";
+  status: "ativo" | "pendente" | "excluido";
   sector: string | null;
+  temp: TempSub | null;
 }
 
 export interface InviteIn {

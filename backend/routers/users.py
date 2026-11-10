@@ -9,22 +9,46 @@ from lib.auth import ENV, IN_ENV, RANK, ROLE_LABELS, ROLES, VIEWERS, current_mem
 from lib.db import db
 from lib.ingest import now_iso
 from lib.metrics import get_settings
-from lib.sectors import CHEF_SECTORS, audit
-from models.schemas import Invite, InviteIn, Me, RoleIn, RoleOption, Settings, UserRow, UsersResponse
+from lib.dates import now_local
+from lib.sectors import ROLE_SECTORS, audit, perms, sector_of
+from models.schemas import Invite, InviteIn, Me, RoleIn, RoleOption, Settings, TempSub, UserRow, UsersResponse
 
 router = APIRouter()
 CLERK_API = "https://api.clerk.com/v1"
 
 
+def label(role: str, sector: str | None) -> str:
+    return f"{ROLE_LABELS[role]} {sector}" if role in ROLE_SECTORS and sector else ROLE_LABELS[role]
+
+
 def _row(p: dict) -> dict:
     role = effective_role(p.get("role"))
+    sector = sector_of({**p, "role": role}) if role in ROLE_SECTORS else None
+    status = "excluido" if p.get("deleted") else ("pendente" if role == "pendente" else "ativo")
     return {"user_id": p["user_id"], "email": p.get("email", ""), "name": p.get("name", ""),
-            "role": role, "role_label": ROLE_LABELS[role], "status": "pendente" if role == "pendente" else "ativo",
-            "sector": p.get("sector") if role == "chefe" else None}
+            "role": role, "role_label": label(role, sector), "status": status, "sector": sector, "temp": p.get("temp") or None}
+
+
+def _check_sector(role: str, sector: str | None) -> None:
+    if role in ROLE_SECTORS and sector not in ROLE_SECTORS[role]:
+        raise HTTPException(status_code=422, detail=f"Escolha o setor ({', '.join(ROLE_SECTORS[role])})")
+
+
+async def _target(user_id: str) -> dict:
+    target = await db.users.find_one({"user_id": user_id, **IN_ENV}, {"_id": 0})
+    if target is None:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    return target
+
+
+async def _keep_one_manager(target: dict) -> None:
+    if (effective_role(target.get("role")) == "gerente"
+            and await db.users.count_documents({"role": "gerente", "deleted": {"$ne": True}, **IN_ENV}) <= 1):
+        raise HTTPException(status_code=409, detail="Mantenha pelo menos um Gerente Geral")
 
 
 def _invite_row(i: dict) -> dict:
-    return {**i, "role_label": ROLE_LABELS.get(i["role"], i["role"])}
+    return {**i, "role_label": label(i["role"], i.get("sector")) if i["role"] in ROLE_LABELS else i["role"]}
 
 
 def _clerk(method: str, path: str, body: dict | None = None) -> dict:
@@ -41,7 +65,10 @@ def _clerk(method: str, path: str, body: dict | None = None) -> dict:
 
 @router.get("/me", response_model=Me)
 async def me(member: dict = Depends(current_member)):
-    return _row(member)
+    row = _row({**member, "deleted": False})
+    if member.get("temp_active"):
+        row["role_label"] = f"{label(member['role'], member.get('sector'))} (substituição até {member['temp']['end'][8:10]}/{member['temp']['end'][5:7]})"
+    return {**row, "perms": perms(member) if member["role"] != "pendente" else {}, "temp_active": bool(member.get("temp_active"))}
 
 
 @router.get("/users", response_model=UsersResponse)
@@ -57,25 +84,62 @@ async def list_users(admin: dict = Depends(require_role("gerente"))):
 async def set_role(user_id: str, body: RoleIn, admin: dict = Depends(require_role("gerente"))):
     if body.role not in ROLES or RANK[body.role] > RANK[admin["role"]]:
         raise HTTPException(status_code=403, detail="Sem permissão para esta ação")
-    if body.role == "chefe" and body.sector not in CHEF_SECTORS:
-        raise HTTPException(status_code=422, detail="Escolha o setor do Chefe (Cozinha, Bar, Salão ou Quiosque)")
-    target = await db.users.find_one({"user_id": user_id, **IN_ENV}, {"_id": 0})
-    if target is None:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-    if (effective_role(target.get("role")) == "gerente" and body.role != "gerente"
-            and await db.users.count_documents({"role": "gerente", **IN_ENV}) <= 1):
-        raise HTTPException(status_code=409, detail="Mantenha pelo menos um gerente")
-    sector = body.sector if body.role == "chefe" else None
+    _check_sector(body.role, body.sector)
+    target = await _target(user_id)
+    if body.role != "gerente":
+        await _keep_one_manager(target)
+    sector = body.sector if body.role in ROLE_SECTORS else None
     await db.users.update_one({"user_id": user_id}, {"$set": {"role": body.role, "sector": sector}})
-    await audit(admin, "perfil alterado", f"{target.get('email')} → {ROLE_LABELS[body.role]}{f' ({sector})' if sector else ''}")
+    await audit(admin, "perfil alterado", f"{target.get('email')}: {label(effective_role(target.get('role')), target.get('sector'))} → {label(body.role, sector)}")
     return _row({**target, "role": body.role, "sector": sector})
+
+
+@router.put("/users/{user_id}/temp", response_model=UserRow)
+async def set_temp(user_id: str, body: TempSub, admin: dict = Depends(require_role("gerente"))):
+    """Substituição temporária: o usuário assume outro perfil entre start e end (inclusive) e depois volta sozinho."""
+    _check_sector(body.role, body.sector)
+    if body.end < body.start or body.end < now_local().date().isoformat():
+        raise HTTPException(status_code=422, detail="Período inválido (fim antes do início ou já passado)")
+    target = await _target(user_id)
+    temp = {**body.model_dump(), "sector": body.sector if body.role in ROLE_SECTORS else None, "by": admin.get("email", "")}
+    await db.users.update_one({"user_id": user_id}, {"$set": {"temp": temp}})
+    await audit(admin, "substituição temporária", f"{target.get('email')} → {label(body.role, temp['sector'])} de {body.start} a {body.end}"
+                + (f" — {body.motivo}" if body.motivo else ""))
+    return _row({**target, "temp": temp})
+
+
+@router.delete("/users/{user_id}/temp", response_model=UserRow)
+async def clear_temp(user_id: str, admin: dict = Depends(require_role("gerente"))):
+    target = await _target(user_id)
+    await db.users.update_one({"user_id": user_id}, {"$unset": {"temp": ""}})
+    await audit(admin, "substituição encerrada", target.get("email", ""))
+    return _row({**target, "temp": None})
+
+
+@router.delete("/users/{user_id}", response_model=UserRow)
+async def delete_user(user_id: str, admin: dict = Depends(require_role("gerente"))):
+    """Excluir perfil = bloqueio imediato de acesso (soft delete; histórico e auditoria preservados)."""
+    target = await _target(user_id)
+    if target["user_id"] == admin["user_id"]:
+        raise HTTPException(status_code=409, detail="Você não pode excluir o próprio perfil")
+    await _keep_one_manager(target)
+    await db.users.update_one({"user_id": user_id}, {"$set": {"deleted": True, "deleted_at": now_iso(), "deleted_by": admin.get("email", "")}})
+    await audit(admin, "perfil excluído", target.get("email", ""))
+    return _row({**target, "deleted": True})
+
+
+@router.post("/users/{user_id}/restore", response_model=UserRow)
+async def restore_user(user_id: str, admin: dict = Depends(require_role("gerente"))):
+    target = await _target(user_id)
+    await db.users.update_one({"user_id": user_id}, {"$set": {"deleted": False}})
+    await audit(admin, "perfil reativado", target.get("email", ""))
+    return _row({**target, "deleted": False})
 
 
 @router.post("/users/invite", response_model=Invite)
 async def invite_user(body: InviteIn, request: Request, admin: dict = Depends(require_role("gerente"))):
     email = body.email.strip().lower()
-    if body.role == "chefe" and body.sector not in CHEF_SECTORS:
-        raise HTTPException(status_code=422, detail="Escolha o setor do Chefe (Cozinha, Bar, Salão ou Quiosque)")
+    _check_sector(body.role, body.sector)
     existing = await db.users.find_one({"email": email, **IN_ENV}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=409, detail="Este e-mail já tem conta — ajuste o perfil na lista de usuários")
@@ -87,10 +151,10 @@ async def invite_user(body: InviteIn, request: Request, admin: dict = Depends(re
     })
     await db.invites.update_many({"email": email, "status": "enviado", **IN_ENV}, {"$set": {"status": "revogado"}})
     doc = {"id": str(uuid.uuid4()), "clerk_id": clerk_inv.get("id", ""), "email": email, "role": body.role,
-           "sector": body.sector if body.role == "chefe" else None,
+           "sector": body.sector if body.role in ROLE_SECTORS else None,
            "status": "enviado", "invited_by": admin.get("email", ""), "created_at": now_iso(), "env": ENV}
     await db.invites.insert_one(dict(doc))
-    await audit(admin, "convite enviado", f"{email} ({ROLE_LABELS[body.role]})")
+    await audit(admin, "convite enviado", f"{email} ({label(body.role, body.sector)})")
     doc.pop("clerk_id")
     doc.pop("env")
     return _invite_row(doc)

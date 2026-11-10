@@ -5,7 +5,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
-from lib.auth import FEEDERS, VIEWERS, require_role
+from lib.auth import VIEWERS, require_perm, require_role
+from lib.sectors import ALL, can_upload, upload_kinds
 from lib.db import db
 from lib.ingest import KIND_LABELS, now_iso, process_upload
 from lib.sectors import audit
@@ -22,10 +23,13 @@ async def create_upload(
     kind: str = Form(...),
     month: Optional[str] = Form(None),
     file: UploadFile = File(...),
-    member: dict = Depends(require_role(*FEEDERS)),
+    member: dict = Depends(require_perm(can_upload)),
 ):
     if kind not in KIND_LABELS:
         raise HTTPException(status_code=422, detail="Tipo de dado inválido")
+    kinds = upload_kinds(member)
+    if kinds != ALL and kind not in kinds:
+        raise HTTPException(status_code=403, detail="Seu perfil só envia faturamento")
     if month and not MONTH_RE.match(month):
         raise HTTPException(status_code=422, detail="Mês inválido (use AAAA-MM)")
     name = file.filename or "arquivo"
@@ -50,7 +54,7 @@ async def create_upload(
 
 
 @router.get("/uploads", response_model=list[Upload])
-async def list_uploads(_: dict = Depends(require_role(*FEEDERS))):
+async def list_uploads(_: dict = Depends(require_perm(can_upload))):
     return await db.uploads.find({}, {"_id": 0}).sort("created_at", -1).to_list(50)
 
 
@@ -74,7 +78,7 @@ async def list_periods(_: dict = Depends(require_role(*VIEWERS))):
 
 
 @router.put("/periods/{month}", response_model=Period)
-async def upsert_period(month: str, body: PeriodIn, member: dict = Depends(require_role(*FEEDERS))):
+async def upsert_period(month: str, body: PeriodIn, member: dict = Depends(require_perm(can_upload))):
     if not MONTH_RE.match(month):
         raise HTTPException(status_code=422, detail="Mês inválido (use AAAA-MM)")
     data = {**body.model_dump(), "month": month, "updated_by": member.get("email", "")}

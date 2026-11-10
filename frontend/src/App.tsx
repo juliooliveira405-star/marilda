@@ -2,7 +2,6 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { Show } from "@clerk/react";
 import ClerkAuthProvider from "@/components/auth/ClerkAuthProvider";
 import AppLayout, { RoleGate } from "@/components/AppLayout";
-import { ADMIN_ROLES, FEED_ROLES, VIEW_ROLES } from "@/lib/roles";
 import { Toaster } from "@/components/ui/sonner";
 import { SignInPage, SignUpPage } from "@/pages/Auth";
 import Painel from "@/pages/Painel";
@@ -35,17 +34,17 @@ export default function App() {
         <Route path="/sign-up/*" element={<SignUpPage />} />
         <Route element={<Protected />}>
           <Route path="/" element={<Navigate to="/painel" replace />} />
-          <Route path="/painel" element={<RoleGate roles={VIEW_ROLES}><Painel /></RoleGate>} />
-          <Route path="/cmv-estoque" element={<RoleGate roles={["gerente", "chefe"]}><CmvEstoque /></RoleGate>} />
-          <Route path="/ifood" element={<RoleGate roles={ADMIN_ROLES}><Ifood /></RoleGate>} />
-          <Route path="/fornecedores-abc" element={<RoleGate roles={ADMIN_ROLES}><Fornecedores /></RoleGate>} />
-          <Route path="/sugestao-pedidos" element={<RoleGate roles={VIEW_ROLES}><SugestaoPedidos /></RoleGate>} />
-          <Route path="/contagem-qr" element={<RoleGate roles={VIEW_ROLES}><ContagemQR /></RoleGate>} />
-          <Route path="/requisicoes" element={<RoleGate roles={VIEW_ROLES}><Requisicoes /></RoleGate>} />
-          <Route path="/economia" element={<RoleGate roles={ADMIN_ROLES}><Economia /></RoleGate>} />
-          <Route path="/insights-ia" element={<RoleGate roles={ADMIN_ROLES}><InsightsIA /></RoleGate>} />
-          <Route path="/carregar-dados" element={<RoleGate roles={FEED_ROLES}><CarregarDados /></RoleGate>} />
-          <Route path="/administracao" element={<RoleGate roles={ADMIN_ROLES}><Administracao /></RoleGate>} />
+          <Route path="/painel" element={<RoleGate gate="view"><Painel /></RoleGate>} />
+          <Route path="/cmv-estoque" element={<RoleGate gate="costs"><CmvEstoque /></RoleGate>} />
+          <Route path="/ifood" element={<RoleGate gate="ifood"><Ifood /></RoleGate>} />
+          <Route path="/fornecedores-abc" element={<RoleGate gate="full"><Fornecedores /></RoleGate>} />
+          <Route path="/sugestao-pedidos" element={<RoleGate gate="view"><SugestaoPedidos /></RoleGate>} />
+          <Route path="/contagem-qr" element={<RoleGate gate="view"><ContagemQR /></RoleGate>} />
+          <Route path="/requisicoes" element={<RoleGate gate="view"><Requisicoes /></RoleGate>} />
+          <Route path="/economia" element={<RoleGate gate="full"><Economia /></RoleGate>} />
+          <Route path="/insights-ia" element={<RoleGate gate="full"><InsightsIA /></RoleGate>} />
+          <Route path="/carregar-dados" element={<RoleGate gate="upload"><CarregarDados /></RoleGate>} />
+          <Route path="/administracao" element={<RoleGate gate="manage"><Administracao /></RoleGate>} />
           <Route path="*" element={<Navigate to="/painel" replace />} />
         </Route>
       </Routes>

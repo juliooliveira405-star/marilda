@@ -12,14 +12,15 @@ try:
 except ModuleNotFoundError:
     from clerk_auth import require_user
 
+from lib.dates import now_local
 from lib.db import db
 
 # Highest first. gerente = admin.
 ROLES = ["gerente", "alimentador", "chefe", "pendente"]
 ROLE_LABELS = {
-    "gerente": "Gerente",
+    "gerente": "Gerente Geral",
     "alimentador": "Alimentador",
-    "chefe": "Chefe de Departamento",
+    "chefe": "Chefe",
     "pendente": "Pendente",
 }
 DEFAULT_ROLE = "pendente"
@@ -97,6 +98,14 @@ async def current_member(user: dict = Depends(require_user)) -> dict:
         )
     if member.get("env") != ENV:
         await db.users.update_one({"user_id": uid}, {"$set": {"env": ENV}})
+    if member.get("deleted"):
+        return {**member, "env": ENV, "role": "pendente", "sector": None}  # perfil excluído: sem acesso a dados
+    temp = member.get("temp") or {}
+    today = now_local().date().isoformat()
+    if temp.get("role") in ROLES and temp.get("start", "9") <= today <= temp.get("end", "0"):
+        # Substituição temporária definida pelo Gerente Geral (data início/fim).
+        return {**member, "env": ENV, "role": effective_role(temp["role"]), "sector": temp.get("sector"),
+                "base_role": effective_role(member["role"]), "temp_active": True}
     return {**member, "env": ENV, "role": effective_role(member["role"])}
 
 
@@ -107,3 +116,13 @@ def require_role(*roles: str):
         return member
 
     return check
+
+
+def require_perm(check, detail: str = "Sem permissão para esta ação"):
+    """Dependency: active member (not pendente/excluído) for whom check(member) is True."""
+    async def dep(member: dict = Depends(current_member)) -> dict:
+        if member["role"] not in VIEWERS or not check(member):
+            raise HTTPException(status_code=403, detail=detail)
+        return member
+
+    return dep

@@ -31,25 +31,25 @@ import { setAuthTokenGetter } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 import { useMe, useNotifications } from "@/lib/queries";
 import { toast } from "sonner";
-import type { Role } from "@/lib/types";
+import type { Me } from "@/lib/types";
 import { CreditBadge, Skeleton } from "@/components/common";
 import { cn } from "@/lib/utils";
 
-import { ADMIN_ROLES, FEED_ROLES, VIEW_ROLES } from "@/lib/roles";
+import { allowed, type Gate } from "@/lib/roles";
 const IDLE_MS = 30 * 60 * 1000;
 
-const NAV: { to: string; label: string; icon: typeof LayoutDashboard; roles: Role[]; testId: string }[] = [
-  { to: "/painel", label: "Painel Executivo", icon: LayoutDashboard, roles: VIEW_ROLES, testId: "nav-painel" },
-  { to: "/cmv-estoque", label: "CMV & Estoque", icon: TrendingDown, roles: ["gerente", "chefe"], testId: "nav-cmv-estoque" },
-  { to: "/fornecedores-abc", label: "Curva ABC Fornecedores", icon: PieChart, roles: ADMIN_ROLES, testId: "nav-fornecedores" },
-  { to: "/sugestao-pedidos", label: "Sugestão de Pedidos", icon: ShoppingCart, roles: VIEW_ROLES, testId: "nav-sugestao" },
-  { to: "/contagem-qr", label: "Contagem por QR Code", icon: QrCode, roles: VIEW_ROLES, testId: "nav-contagem-qr" },
-  { to: "/requisicoes", label: "Requisições", icon: PackageMinus, roles: VIEW_ROLES, testId: "nav-requisicoes" },
-  { to: "/economia", label: "Simulador de Economia", icon: Calculator, roles: ADMIN_ROLES, testId: "nav-economia" },
-  { to: "/insights-ia", label: "Insights & Diagnóstico IA", icon: Sparkles, roles: ADMIN_ROLES, testId: "nav-insights" },
-  { to: "/ifood", label: "iFood", icon: Bike, roles: ADMIN_ROLES, testId: "nav-ifood" },
-  { to: "/carregar-dados", label: "Carregar Dados & PDFs", icon: UploadCloud, roles: FEED_ROLES, testId: "nav-carregar" },
-  { to: "/administracao", label: "Administração & Metas", icon: ShieldCheck, roles: ADMIN_ROLES, testId: "nav-admin" },
+const NAV: { to: string; label: string; icon: typeof LayoutDashboard; gate: Gate; testId: string }[] = [
+  { to: "/painel", label: "Painel Executivo", icon: LayoutDashboard, gate: "view", testId: "nav-painel" },
+  { to: "/cmv-estoque", label: "CMV & Estoque", icon: TrendingDown, gate: "costs", testId: "nav-cmv-estoque" },
+  { to: "/fornecedores-abc", label: "Curva ABC Fornecedores", icon: PieChart, gate: "full", testId: "nav-fornecedores" },
+  { to: "/sugestao-pedidos", label: "Sugestão de Pedidos", icon: ShoppingCart, gate: "view", testId: "nav-sugestao" },
+  { to: "/contagem-qr", label: "Contagem por QR Code", icon: QrCode, gate: "view", testId: "nav-contagem-qr" },
+  { to: "/requisicoes", label: "Requisições", icon: PackageMinus, gate: "view", testId: "nav-requisicoes" },
+  { to: "/economia", label: "Simulador de Economia", icon: Calculator, gate: "full", testId: "nav-economia" },
+  { to: "/insights-ia", label: "Insights & Diagnóstico IA", icon: Sparkles, gate: "full", testId: "nav-insights" },
+  { to: "/ifood", label: "iFood", icon: Bike, gate: "ifood", testId: "nav-ifood" },
+  { to: "/carregar-dados", label: "Carregar Dados & PDFs", icon: UploadCloud, gate: "upload", testId: "nav-carregar" },
+  { to: "/administracao", label: "Administração & Metas", icon: ShieldCheck, gate: "manage", testId: "nav-admin" },
 ];
 
 // Registers Clerk's token getter for api.ts and wipes cached data whenever the account changes.
@@ -66,11 +66,8 @@ function AuthBridge({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-const COST_SECTORS = ["Cozinha", "Bar", "Quiosque"];
-
-function NavList({ role, sector, onNavigate, badge }: { role: Role | undefined; sector?: string | null; onNavigate?: () => void; badge: number }) {
-  // Chefe Salão sees quantities only → no CMV page.
-  const items = NAV.filter((n) => role && n.roles.includes(role) && !(n.to === "/cmv-estoque" && role === "chefe" && !COST_SECTORS.includes(sector ?? "")));
+function NavList({ me, onNavigate, badge }: { me: Me | undefined; onNavigate?: () => void; badge: number }) {
+  const items = NAV.filter((n) => allowed(me, n.gate));
   return (
     <nav className="flex flex-col gap-1">
       {items.map((n) => (
@@ -160,10 +157,10 @@ function PendingScreen() {
   );
 }
 
-export function RoleGate({ roles, children }: { roles: Role[]; children: ReactNode }) {
+export function RoleGate({ gate, children }: { gate: Gate; children: ReactNode }) {
   const { data: me } = useMe();
   if (!me) return null;
-  if (!roles.includes(me.role))
+  if (!allowed(me, gate))
     return (
       <div data-testid="no-access" className="rounded-xl border border-slate-800 bg-panel p-8 text-center text-sm text-slate-400">
         Seu perfil ({me.role_label}) não tem acesso a esta área.
@@ -324,7 +321,7 @@ function Shell() {
       <aside data-testid="erp-sidebar" className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col justify-between border-r border-slate-800/80 bg-sidebar p-5 lg:flex">
         <div className="space-y-8">
           <Brand />
-          <NavList role={role} sector={me?.sector} badge={badge} />
+          <NavList me={me} badge={badge} />
         </div>
         <SidebarFooter email={me?.email} roleLabel={me?.role_label} sector={me?.sector} />
       </aside>
@@ -350,7 +347,7 @@ function Shell() {
           <div className="flex h-full flex-col justify-between gap-6">
             <div className="space-y-8">
               <Brand />
-              <NavList role={role} sector={me?.sector} badge={badge} onNavigate={() => setOpen(false)} />
+              <NavList me={me} badge={badge} onNavigate={() => setOpen(false)} />
             </div>
             <SidebarFooter email={me?.email} roleLabel={me?.role_label} sector={me?.sector} />
           </div>

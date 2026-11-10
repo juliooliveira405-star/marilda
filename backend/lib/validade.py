@@ -17,8 +17,10 @@ async def expiring(member: dict, days: int = 3) -> list[dict]:
     today = now_local().date()
     cur = today.strftime("%Y-%m")
     q: dict = {"month": {"$in": [cur, _prev_month(cur)]}, "qr_code": {"$nin": [None, ""]}, "deleted": {"$ne": True}}
-    if member["role"] == "chefe":
-        q["sector"] = member.get("sector") or "-"
+    from lib.sectors import SECTORS, op_sectors
+    ops = op_sectors(member)
+    if set(ops) != set(SECTORS):
+        q["sector"] = {"$in": ops}
     entries: dict[str, dict] = {}
     async for e in db.count_entries.find(q, {"_id": 0}).sort("created_at", -1):
         entries.setdefault(e["qr_code"], e)

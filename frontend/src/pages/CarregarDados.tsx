@@ -34,7 +34,10 @@ function StatusIcon({ s }: { s: Upload["status"] }) {
 
 function UploadForm() {
   const qc = useQueryClient();
-  const [kind, setKind] = useState<UploadKind>("compras");
+  const { data: me } = useMe();
+  const kindsAllowed = me?.perms.upload_kinds ?? [];
+  const kinds = KINDS.filter((k) => kindsAllowed.includes("*") || kindsAllowed.includes(k.id));
+  const [kind, setKind] = useState<UploadKind>(kindsAllowed.includes("*") ? "compras" : "faturamento");
   const [month, setMonth] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [drag, setDrag] = useState(false);
@@ -62,7 +65,7 @@ function UploadForm() {
   return (
     <div className="space-y-5">
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5" data-testid="upload-type-selector">
-        {KINDS.map((k) => (
+        {kinds.map((k) => (
           <button key={k.id} data-testid={`upload-kind-${k.id}`} onClick={() => setKind(k.id)}
             className={cn("rounded-lg border p-3 text-left transition-[border-color,background-color,transform] duration-150 hover:-translate-y-0.5",
               kind === k.id ? "border-amber bg-amber/10" : "border-slate-800 hover:border-slate-600")}>

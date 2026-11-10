@@ -52,7 +52,7 @@ export default function SugestaoPedidos() {
   const [from, setFrom] = useState<string | undefined>();
   const [to, setTo] = useState<string | undefined>();
   const [sectorSel, setSectorSel] = useState("Todos");
-  const isManager = me?.role === "gerente";
+  const isManager = !!me?.perms.full;
   const { data, isLoading, isError } = useReorder(from, to, isManager && sectorSel !== "Todos" ? sectorSel : undefined);
   const draft = useMutation({
     mutationFn: (body: RequisitionIn) => apiPost<Requisition>("/requisitions", body),
@@ -67,7 +67,8 @@ export default function SugestaoPedidos() {
       item: i.item, descricao: i.descricao, um: i.um, qty: Math.max(+(i.qtd_anterior - Math.max(i.qtd_atual, 0)).toFixed(3), 1), qr_code: null,
     }));
     if (!lines.length) return toast.info("Nenhum item zerado ou com baixa forte");
-    const sector = me?.role === "chefe" ? (me.sector ?? "Estoque") : sectorSel !== "Todos" ? sectorSel : "Estoque";
+    const mine = me?.perms.op_sectors ?? [];
+    const sector = sectorSel !== "Todos" && mine.includes(sectorSel) ? sectorSel : mine.length && !isManager ? mine[0] : "Estoque";
     draft.mutate({ sector, priority: "normal", items: lines, note: `Gerada da sugestão ${monthLabel(data?.from_month)} → ${monthLabel(data?.to_month)}`, submit: false, force: false });
   };
   const [q, setQ] = useState("");

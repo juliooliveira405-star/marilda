@@ -13,19 +13,20 @@ import { apiDelete, apiDownload, apiPatch, apiPost, apiPut, errorMessage } from 
 import { qk, useAudit, useMe, useSettings, useUsers } from "@/lib/queries";
 import type { Invite, InviteIn, Role, Settings, UserRow } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { ROLE_SECTORS } from "@/lib/roles";
+import { CalendarClock, RotateCcw, Trash2 } from "lucide-react";
 
 const ASSIGNABLE: { value: Exclude<Role, "pendente">; label: string }[] = [
-  { value: "gerente", label: "Gerente" },
+  { value: "gerente", label: "Gerente Geral" },
+  { value: "chefe", label: "Chefe" },
   { value: "alimentador", label: "Alimentador" },
-  { value: "chefe", label: "Chefe de Departamento" },
 ];
+const needsSector = (role: string) => role in ROLE_SECTORS;
 
-const CHEF_SECTORS = ["Cozinha", "Bar", "Salão", "Quiosque"];
-
-function SectorPicker({ value, onChange, testId }: { value: string; onChange: (s: string) => void; testId: string }) {
+function SectorPicker({ role, value, onChange, testId }: { role: string; value: string; onChange: (s: string) => void; testId: string }) {
   return (
     <div className="flex flex-wrap gap-2" data-testid={testId}>
-      {CHEF_SECTORS.map((s) => (
+      {(ROLE_SECTORS[role] ?? []).map((s) => (
         <button key={s} type="button" data-testid={`${testId}-${s}`} onClick={() => onChange(s)}
           className={cn("rounded-lg border px-3 py-1.5 text-sm transition-colors duration-150", value === s ? "border-amber bg-amber/10 text-amber" : "border-slate-800 text-slate-300")}>{s}</button>
       ))}
@@ -38,7 +39,7 @@ function ApproveDialog({ user, onClose }: { user: UserRow | null; onClose: () =>
   const [role, setRole] = useState<string>("");
   const [sector, setSector] = useState("");
   const approve = useMutation({
-    mutationFn: () => apiPatch<UserRow>(`/users/${user?.user_id}/role`, { role, sector: role === "chefe" ? sector : null }),
+    mutationFn: () => apiPatch<UserRow>(`/users/${user?.user_id}/role`, { role, sector: needsSector(role) ? sector : null }),
     onSuccess: (u) => {
       toast.success(`${u.email || "Usuário"} aprovado como ${u.role_label}`);
       void qc.invalidateQueries({ queryKey: qk.users });
@@ -52,22 +53,22 @@ function ApproveDialog({ user, onClose }: { user: UserRow | null; onClose: () =>
       <DialogContent data-testid="approve-user-dialog">
         <DialogHeader>
           <DialogTitle>{user?.status === "pendente" ? "Aprovar" : "Alterar perfil de"} {user?.email}</DialogTitle>
-          <DialogDescription>Escolha o perfil de acesso (obrigatório). Chefe precisa de setor.</DialogDescription>
+          <DialogDescription>Escolha o perfil e o setor. Chefe Cozinha vê CMV de Cozinha + Quiosque + iFood; Chefe Bar só Bar; Chefe Estoque vê tudo. Alimentador nunca vê valores.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-2">
           {ASSIGNABLE.map((r) => (
-            <button key={r.value} data-testid={`approve-role-${r.value}`} onClick={() => setRole(r.value)}
+            <button key={r.value} data-testid={`approve-role-${r.value}`} onClick={() => { setRole(r.value); setSector(""); }}
               className={cn("rounded-lg border px-3 py-2.5 text-left text-sm transition-[border-color,background-color] duration-150",
                 role === r.value ? "border-amber bg-amber/10 text-amber" : "border-slate-800 text-slate-300 hover:border-slate-600")}>
               {r.label}
             </button>
           ))}
         </div>
-        {role === "chefe" && <SectorPicker value={sector} onChange={setSector} testId="approve-sector" />}
+        {needsSector(role) && <SectorPicker role={role} value={sector} onChange={setSector} testId="approve-sector" />}
         <DialogFooter>
           <Button variant="outline" onClick={onClose} data-testid="approve-cancel-button">Cancelar</Button>
-          <Button disabled={!role || (role === "chefe" && !sector) || approve.isPending} onClick={() => approve.mutate()} data-testid="approve-confirm-button">
-            {approve.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Aprovar
+          <Button disabled={!role || (needsSector(role) && !sector) || approve.isPending} onClick={() => approve.mutate()} data-testid="approve-confirm-button">
+            {approve.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{user?.status === "pendente" ? "Aprovar" : "Salvar perfil"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -81,7 +82,7 @@ function InvitePanel({ invites }: { invites: Invite[] }) {
   const [role, setRole] = useState<InviteIn["role"]>("alimentador");
   const [sector, setSector] = useState("");
   const send = useMutation({
-    mutationFn: () => apiPost<Invite>("/users/invite", { email, role, sector: role === "chefe" ? sector : null }),
+    mutationFn: () => apiPost<Invite>("/users/invite", { email, role, sector: needsSector(role) ? sector : null }),
     onSuccess: (i) => {
       toast.success(`Convite enviado para ${i.email} (${i.role_label})`);
       setEmail("");
@@ -98,15 +99,15 @@ function InvitePanel({ invites }: { invites: Invite[] }) {
     <Panel title="Convidar por e-mail" testId="admin-invite-panel">
       <div className="flex flex-col gap-2 sm:flex-row">
         <Input data-testid="invite-email-input" type="email" placeholder="email@exemplo.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <Select value={role} onValueChange={(v: string) => setRole(v as InviteIn["role"])}>
+        <Select value={role} onValueChange={(v: string) => { setRole(v as InviteIn["role"]); setSector(""); }}>
           <SelectTrigger className="w-full sm:w-56" data-testid="invite-role-select"><SelectValue>{(v: string) => ASSIGNABLE.find((r) => r.value === v)?.label}</SelectValue></SelectTrigger>
           <SelectContent>{ASSIGNABLE.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
         </Select>
-        <Button data-testid="invite-send-button" disabled={!/^\S+@\S+\.\S+$/.test(email) || (role === "chefe" && !sector) || send.isPending} onClick={() => send.mutate()}>
+        <Button data-testid="invite-send-button" disabled={!/^\S+@\S+\.\S+$/.test(email) || (needsSector(role) && !sector) || send.isPending} onClick={() => send.mutate()}>
           {send.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}Convidar
         </Button>
       </div>
-      {role === "chefe" && <div className="mt-3"><SectorPicker value={sector} onChange={setSector} testId="invite-sector" /></div>}
+      {needsSector(role) && <div className="mt-3"><SectorPicker role={role} value={sector} onChange={setSector} testId="invite-sector" /></div>}
       <p className="mt-2 text-xs text-slate-500">A pessoa recebe um e-mail, cria a senha e já entra com o perfil escolhido.</p>
       {invites.length > 0 && (
         <ul className="mt-4 space-y-2" data-testid="invite-list">
@@ -122,21 +123,77 @@ function InvitePanel({ invites }: { invites: Invite[] }) {
   );
 }
 
+const todayIso = () => new Date().toLocaleDateString("sv-SE");
+const br = (iso: string) => iso.split("-").reverse().join("/");
+
+function TempDialog({ user, onClose }: { user: UserRow | null; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [role, setRole] = useState<string>("chefe");
+  const [sector, setSector] = useState("");
+  const [start, setStart] = useState(todayIso());
+  const [end, setEnd] = useState(todayIso());
+  const [motivo, setMotivo] = useState("");
+  const done = (msg: string) => { toast.success(msg); void qc.invalidateQueries({ queryKey: qk.users }); onClose(); };
+  const save = useMutation({
+    mutationFn: () => apiPut<UserRow>(`/users/${user?.user_id}/temp`, { role, sector: needsSector(role) ? sector : null, start, end, motivo }),
+    onSuccess: (u) => done(`${u.email}: substituição de ${br(start)} a ${br(end)}`),
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  const clear = useMutation({
+    mutationFn: () => apiDelete<UserRow>(`/users/${user?.user_id}/temp`),
+    onSuccess: () => done("Substituição encerrada"),
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  return (
+    <Dialog open={!!user} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent data-testid="temp-dialog">
+        <DialogHeader>
+          <DialogTitle>Substituição temporária · {user?.email}</DialogTitle>
+          <DialogDescription>No período, a pessoa usa o perfil escolhido e depois volta sozinha ao perfil atual ({user?.role_label}).</DialogDescription>
+        </DialogHeader>
+        {user?.temp && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber/40 bg-amber/5 p-2 text-xs text-amber" data-testid="temp-current">
+            Atual: {ASSIGNABLE.find((r) => r.value === user.temp?.role)?.label} {user.temp.sector ?? ""} · {br(user.temp.start)} a {br(user.temp.end)}
+            <Button size="xs" variant="outline" data-testid="temp-clear" disabled={clear.isPending} onClick={() => clear.mutate()}>Encerrar</Button>
+          </div>
+        )}
+        <div className="grid grid-cols-3 gap-2">
+          {ASSIGNABLE.map((r) => (
+            <button key={r.value} type="button" data-testid={`temp-role-${r.value}`} onClick={() => { setRole(r.value); setSector(""); }}
+              className={cn("rounded-lg border px-2 py-2 text-sm", role === r.value ? "border-amber bg-amber/10 text-amber" : "border-slate-800 text-slate-300")}>{r.label}</button>
+          ))}
+        </div>
+        {needsSector(role) && <SectorPicker role={role} value={sector} onChange={setSector} testId="temp-sector" />}
+        <div className="grid grid-cols-2 gap-2">
+          <div><Label className="mb-1 text-xs text-slate-400">Início</Label><Input type="date" data-testid="temp-start" value={start} onChange={(e) => setStart(e.target.value)} /></div>
+          <div><Label className="mb-1 text-xs text-slate-400">Fim</Label><Input type="date" data-testid="temp-end" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
+        </div>
+        <Input data-testid="temp-motivo" placeholder="Motivo (ex.: férias do Chefe Bar)" maxLength={200} value={motivo} onChange={(e) => setMotivo(e.target.value)} />
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button data-testid="temp-save" disabled={(needsSector(role) && !sector) || !start || !end || save.isPending} onClick={() => save.mutate()}>
+            {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Salvar substituição
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function UsersPanel() {
   const qc = useQueryClient();
   const { data: me } = useMe();
   const { data, isLoading, isError } = useUsers(true);
   const [approving, setApproving] = useState<UserRow | null>(null);
-  const labels = Object.fromEntries((data?.roles ?? []).map((r) => [r.value, r.label])) as Record<string, string>;
+  const [temping, setTemping] = useState<UserRow | null>(null);
   const users = isError ? [] : (data?.users ?? []);
   const pendingCount = users.filter((u) => u.status === "pendente").length;
 
-  const change = useMutation({
-    mutationFn: ({ id, role }: { id: string; role: string }) => apiPatch<UserRow>(`/users/${id}/role`, { role }),
+  const toggle = useMutation({
+    mutationFn: (u: UserRow) => (u.status === "excluido" ? apiPost<UserRow>(`/users/${u.user_id}/restore`, {}) : apiDelete<UserRow>(`/users/${u.user_id}`)),
     onSuccess: (u) => {
-      toast.success(`${u.email || "Usuário"} agora é ${u.role_label}`);
+      toast.success(u.status === "excluido" ? `${u.email}: perfil excluído — acesso bloqueado` : `${u.email}: perfil reativado`);
       void qc.invalidateQueries({ queryKey: qk.users });
-      void qc.invalidateQueries({ queryKey: qk.me });
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
@@ -147,23 +204,34 @@ function UsersPanel() {
         <UserCheck className="mr-1 h-4 w-4" />Aprovar
       </Button>
     ) : (
-      <Select value={u.role} onValueChange={(v: string) => { if (v === "chefe") setApproving(u); else if (v !== u.role) change.mutate({ id: u.user_id, role: v }); }}>
-        <SelectTrigger size="sm" className="w-full sm:w-56" data-testid={`${prefix}-user-role-select-${u.user_id}`}><SelectValue>{(v: string) => `${labels[v] ?? v}${v === "chefe" && u.sector ? ` · ${u.sector}` : ""}`}</SelectValue></SelectTrigger>
-        <SelectContent>{(data?.roles ?? []).map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}</SelectContent>
-      </Select>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 text-sm text-slate-200" data-testid={`${prefix}-user-profile-${u.user_id}`}>{u.role_label}</span>
+        {u.temp && <span className="rounded bg-amber/10 px-1.5 py-0.5 text-[10px] text-amber" data-testid={`${prefix}-user-temp-${u.user_id}`}>subst. {u.temp.sector ?? u.temp.role} até {br(u.temp.end).slice(0, 5)}</span>}
+        {u.status !== "excluido" && <>
+          <Button size="xs" variant="outline" data-testid={`${prefix}-user-role-edit-${u.user_id}`} onClick={() => setApproving(u)}>Alterar perfil</Button>
+          <Button size="xs" variant="outline" data-testid={`${prefix}-user-temp-btn-${u.user_id}`} onClick={() => setTemping(u)}><CalendarClock className="mr-1 h-3 w-3" />Substituição</Button>
+        </>}
+        {u.user_id !== me?.user_id && (
+          <Button size="xs" variant={u.status === "excluido" ? "outline" : "destructive"} data-testid={`${prefix}-user-delete-${u.user_id}`} disabled={toggle.isPending}
+            onClick={() => { if (u.status === "excluido" || window.confirm(`Excluir o perfil de ${u.email}? O acesso é bloqueado na hora (histórico mantido).`)) toggle.mutate(u); }}>
+            {u.status === "excluido" ? <><RotateCcw className="mr-1 h-3 w-3" />Reativar</> : <><Trash2 className="mr-1 h-3 w-3" />Excluir</>}
+          </Button>
+        )}
+      </div>
     );
   const statusBadge = (u: UserRow, prefix = "admin") => (
     <span data-testid={`${prefix}-user-status-${u.user_id}`} className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase",
-      u.status === "pendente" ? "bg-[#78350F] text-[#FDE68A]" : "bg-[#064E3B] text-[#6EE7B7]")}>{u.status === "pendente" ? "Pendente" : "Ativo"}</span>
+      u.status === "pendente" ? "bg-[#78350F] text-[#FDE68A]" : u.status === "excluido" ? "bg-slate-800 text-slate-400" : "bg-[#064E3B] text-[#6EE7B7]")}>
+      {u.status === "pendente" ? "Pendente" : u.status === "excluido" ? "Excluído" : "Ativo"}</span>
   );
 
   return (
     <div className="space-y-6">
       <Panel title={`Usuários (${users.length})${pendingCount ? ` · ${pendingCount} aguardando aprovação` : ""}`} testId="admin-users-table">
         <div className="mb-4 grid gap-2 text-xs text-slate-400 md:grid-cols-3">
-          <div className="rounded-lg border border-slate-800 p-3"><strong className="text-amber">Gerente</strong> — tudo: aprova usuários, metas, horários, desfaz envios.</div>
-          <div className="rounded-lg border border-slate-800 p-3"><strong className="text-slate-200">Chefe de Departamento</strong> — painéis, aprova requisições, define horários de retirada, contagens.</div>
-          <div className="rounded-lg border border-slate-800 p-3"><strong className="text-slate-200">Alimentador</strong> — envia dados, conta estoque, retira itens nos horários livres.</div>
+          <div className="rounded-lg border border-slate-800 p-3"><strong className="text-amber">Gerente Geral</strong> — tudo. Único que promove, rebaixa, substitui e exclui perfis.</div>
+          <div className="rounded-lg border border-slate-800 p-3"><strong className="text-slate-200">Chefes</strong> — Cozinha: CMV Cozinha + Quiosque + iFood · Bar: CMV Bar · Estoque: vê tudo · Salão: sem valores.</div>
+          <div className="rounded-lg border border-slate-800 p-3"><strong className="text-slate-200">Alimentadores</strong> — nunca veem CMV ou custo. Cozinha (+Quiosque), Bar, Salão (+faturamento), Estoque (separa, falta, aplica contagem).</div>
         </div>
         {isLoading ? (
           <Skeleton className="h-40" />
@@ -207,7 +275,8 @@ function UsersPanel() {
         <p className="mt-3 text-xs text-slate-500">Quem se cadastra em /sign-up aparece como Pendente até um Gerente aprovar e escolher o perfil.</p>
       </Panel>
       <InvitePanel invites={data?.invites ?? []} />
-      <ApproveDialog user={approving} onClose={() => setApproving(null)} />
+      <ApproveDialog key={approving?.user_id ?? "none"} user={approving} onClose={() => setApproving(null)} />
+      <TempDialog key={temping?.user_id ?? "none-t"} user={temping} onClose={() => setTemping(null)} />
     </div>
   );
 }

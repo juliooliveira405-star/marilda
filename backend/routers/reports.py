@@ -1,6 +1,7 @@
 """Reports: expiry alerts (validades) and the one-click monthly PDF for the board."""
 
 import io
+import re
 from collections import Counter
 from typing import Optional
 
@@ -8,11 +9,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from lib import metrics, pdf
-from lib.auth import VIEWERS, require_role
+from lib.auth import VIEWERS, require_perm, require_role
 from lib.dates import now_local
 from lib.db import db
 from lib.ingest import now_iso
-from lib.sectors import CMV_SECTORS, audit, supplier_sector_map
+from lib.sectors import CMV_SECTORS, audit, full_view, op_sectors, supplier_sector_map
 from lib.validade import expiring
 from models.schemas import BaixaIn, ValidadeAlert
 
@@ -29,7 +30,8 @@ async def validades(dias: int = 7, member: dict = Depends(viewer)):
 @router.post("/validades/{code}/baixa", response_model=list[ValidadeAlert])
 async def baixa(code: str, body: BaixaIn, member: dict = Depends(viewer)):
     lb = await db.qr_labels.find_one({"code": code}, {"_id": 0, "descricao": 1, "validade": 1})
-    if not lb:
+    entry = await db.count_entries.find_one({"qr_code": code, "deleted": {"$ne": True}}, {"_id": 0, "sector": 1}, sort=[("created_at", -1)])
+    if not lb or (entry and (entry.get("sector") or "Estoque") not in op_sectors(member)):
         raise HTTPException(status_code=404, detail="Etiqueta não encontrada")
     await db.qr_labels.update_one({"code": code}, {"$set": {"baixa": True, "baixa_motivo": body.motivo, "baixa_by": member.get("email", ""),
                                                              "baixa_at": now_iso()}})
@@ -68,8 +70,10 @@ async def _report_data(month: str) -> dict:
 
 
 @router.get("/reports/monthly")
-async def monthly_report(month: Optional[str] = None, member: dict = Depends(manager)):
+async def monthly_report(month: Optional[str] = None, member: dict = Depends(require_perm(full_view))):
     month = month or now_local().strftime("%Y-%m")
+    if not re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", month):
+        raise HTTPException(status_code=422, detail="Mês inválido (use AAAA-MM)")
     data = await _report_data(month)
     content = pdf.monthly_report_pdf(data)
     await audit(member, "relatório mensal PDF", data["month"]["label"])

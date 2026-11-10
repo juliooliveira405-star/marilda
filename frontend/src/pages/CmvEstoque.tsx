@@ -10,17 +10,18 @@ import { cn } from "@/lib/utils";
 
 const CMV_SECTORS = ["Cozinha", "Bar", "Quiosque"];
 
-function SectorCmvPanel({ locked, max }: { locked?: string; max: number }) {
-  const [pick, setPick] = useState("Cozinha");
-  const sector = locked ?? pick;
-  const { data, isLoading, isError, error } = useSectorCmv(locked ? undefined : sector);
+function SectorCmvPanel({ options = CMV_SECTORS, max }: { options?: string[]; max: number }) {
+  const [pick, setPick] = useState(options[0]);
+  const sector = pick;
+  const locked = options.length === 1;
+  const { data, isLoading, isError, error } = useSectorCmv(sector);
   const months = (data?.months ?? []).filter((m) => m.estoque_valor !== null || m.compras > 0);
   return (
     <Panel title={`CMV do setor · ${sector}`} testId="sector-cmv-panel"
       action={!locked && (
         <Select value={pick} onValueChange={(v: string) => setPick(v)}>
           <SelectTrigger size="sm" className="w-36" data-testid="sector-cmv-select"><SelectValue /></SelectTrigger>
-          <SelectContent>{CMV_SECTORS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+          <SelectContent>{options.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
         </Select>
       )}>
       {isLoading ? <Skeleton className="h-40" /> : isError ? (
@@ -69,12 +70,13 @@ function SectorCmvPanel({ locked, max }: { locked?: string; max: number }) {
 export default function CmvEstoque() {
   const { data: me } = useMe();
   if (!me) return null;
-  if (me.role === "chefe") {
+  if (!me.perms.full) {
+    const mine = CMV_SECTORS.filter((s) => me.perms.cost_sectors.includes(s));
     return (
       <div>
-        <PageHeader eyebrow={`Setor ${me.sector ?? ""}`} title="CMV & Estoque do setor" subtitle="CMV = Estoque Inicial + Compras − Estoque Final, só com itens e fornecedores do seu setor." />
-        {CMV_SECTORS.includes(me.sector ?? "") ? <SectorCmvPanel locked={me.sector ?? ""} max={0.3} />
-          : <EmptyState title="Seu setor não tem CMV" detail="Chefe de Salão acompanha quantidades, sem valores." testId="sector-cmv-none" />}
+        <PageHeader eyebrow={me.role_label} title="CMV & Estoque do setor" subtitle="CMV = Estoque Inicial + Compras − Estoque Final, só com itens e fornecedores dos seus setores." />
+        {mine.length ? <SectorCmvPanel options={mine} max={0.3} />
+          : <EmptyState title="Seu perfil não tem CMV" detail="Seu perfil acompanha quantidades, sem valores." testId="sector-cmv-none" />}
       </div>
     );
   }

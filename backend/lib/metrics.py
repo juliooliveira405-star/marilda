@@ -209,7 +209,8 @@ def classify(ant: float, atu: float) -> tuple[str, float, float]:
     return s, var, pct
 
 
-async def compute_reorder(from_month: Optional[str] = None, to_month: Optional[str] = None, sector: Optional[str] = None) -> dict:
+async def compute_reorder(from_month: Optional[str] = None, to_month: Optional[str] = None, sector=None) -> dict:
+    allowed = [sector] if isinstance(sector, str) else sector
     from lib.sectors import item_sector
     inv_months = sorted(await db.inventory.distinct("month"))
     if not to_month and inv_months:
@@ -231,7 +232,7 @@ async def compute_reorder(from_month: Optional[str] = None, to_month: Optional[s
         ant = (ra or {}).get("qty", 0) or 0
         atu = (rb or {}).get("qty", 0) or 0
         setor = item_sector(ref.get("ggrupo", ""), ref.get("grupo", ""), ref.get("sgrupo", ""))
-        if sector and setor != sector:
+        if allowed and setor not in allowed:
             continue
         status, var, pct = classify(ant, atu)
         custo = costs.get(code)
@@ -246,7 +247,7 @@ async def compute_reorder(from_month: Optional[str] = None, to_month: Optional[s
             "ggrupo": norm(ref.get("ggrupo", "")).upper(),
         })
     items.sort(key=lambda x: (STATUS_ORDER.index(x["status"]), -x["valor_reposicao"], x["variacao"]))
-    return {"from_month": from_month, "to_month": to_month, "counts": counts, "sector": sector,
+    return {"from_month": from_month, "to_month": to_month, "counts": counts, "sector": ", ".join(allowed) if allowed else None,
             "valor_reposicao_total": round(total_rep, 2), "items": items}
 
 
