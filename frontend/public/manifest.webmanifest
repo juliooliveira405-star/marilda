@@ -1,6 +1,6 @@
 {
-  "name": "Madrila ERP — Ecossistema de Controle Operacional",
-  "short_name": "Madrila ERP",
+  "name": "Madrila E.G.O — Ecossistema de Gerenciamento Operacional",
+  "short_name": "Madrila E.G.O",
   "description": "CMV, estoque, compras, contagem por QR e requisições — idealizado e criado por Julio Acauã.",
   "start_url": "/painel",
   "scope": "/",
