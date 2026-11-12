@@ -4,6 +4,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
+AppLanguage = Literal["pt", "es"]
+
 
 # ---------- users / settings ----------
 class Perms(BaseModel):
@@ -36,6 +38,7 @@ class Me(BaseModel):
     role: str
     role_label: str
     sector: Optional[str] = None
+    language: AppLanguage = "pt"
     perms: Perms = Perms()
     temp_active: bool = False
     temp: Optional[TempSub] = None
@@ -49,6 +52,7 @@ class UserRow(BaseModel):
     role_label: str
     status: Literal["ativo", "pendente", "excluido"] = "ativo"
     sector: Optional[str] = None
+    language: AppLanguage = "pt"
     temp: Optional[TempSub] = None
 
 
@@ -385,7 +389,7 @@ class ReqLineIn(BaseModel):
 
 
 REQ_STATUS = Literal["rascunho", "enviada", "aprovada", "devolvida", "rejeitada", "em_preparo", "pronto", "entregue",
-                     "comprada", "recebida", "excluida"]
+                    "comprada", "recebida", "excluida"]
 AVAIL = Literal["pendente", "ok", "parcial", "sem_estoque"]
 
 
@@ -666,3 +670,4 @@ class NotaConfIn(BaseModel):
     anotacao: str = Field("", max_length=1000)
     anotacao_tipos: list[ANOTACAO] = []
     itens: list[NotaItemIn] = Field(..., max_length=300)
+
