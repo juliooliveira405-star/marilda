@@ -15,3 +15,8 @@ createRoot(document.getElementById('root')!).render(
     </QueryClientProvider>
   </StrictMode>,
 )
+
+// Installable app (Android / iOS / Windows): passthrough service worker, no data cached on the device.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => void navigator.serviceWorker.register("/sw.js").catch(() => undefined));
+}

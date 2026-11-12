@@ -136,3 +136,18 @@ async def suggest_supplier_sectors(rows: list[dict]) -> dict[str, str]:
     )
     data = _parse_json(await _run(chat, UserMessage(text=prompt)))
     return {k: v for k, v in (data.get("setores") or {}).items() if isinstance(v, str)}
+
+
+NOTA_SCHEMA = ('{"fornecedor":"","numero":"","data":"DD/MM/AAAA","total":null,'
+               '"itens":[{"descricao":"","qtd":0,"um":"","valor_unit":null,"valor_total":null}]}')
+
+
+async def read_nota(file_path: str, mime: str) -> dict:
+    """Photo/PDF of a Brazilian invoice (NF-e/DANFE or cupom) → supplier, number, date, items."""
+    chat = LlmChat(api_key=_key(), session_id=f"nota-{uuid.uuid4()}",
+                   system_message="Você lê notas fiscais brasileiras (DANFE, NF-e, cupom) e responde SOMENTE JSON válido.").with_model(*EXTRACTION_MODEL)
+    prompt = ("Extraia da nota: fornecedor (nome do emitente), numero (nº da NF), data de emissão, total da nota e TODOS os itens "
+              "(descrição do produto, quantidade, unidade, valor unitário, valor total). Números com ponto decimal. "
+              f"Responda só JSON neste formato: {NOTA_SCHEMA}. Campo ilegível = vazio/null.")
+    data = _parse_json(await _run(chat, UserMessage(text=prompt, file_contents=[FileContentWithMimeType(file_path=file_path, mime_type=mime)])))
+    return data if isinstance(data, dict) else {}

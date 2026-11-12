@@ -106,6 +106,12 @@ def can_ifood(member: dict) -> bool:
     return full_view(member) or (member["role"] == "chefe" and sector_of(member) == "Cozinha")
 
 
+def can_notas(member: dict) -> bool:
+    """Conferência de nota: Alimentador Estoque, Chefe Cozinha, Chefe Bar (+ Gerente Geral / Chefe Estoque)."""
+    return full_view(member) or (member["role"] == "chefe" and sector_of(member) in ("Cozinha", "Bar")) or \
+        (member["role"] == "alimentador" and sector_of(member) == "Estoque")
+
+
 def can_upload(member: dict) -> bool:
     return full_view(member) or (member["role"] == "alimentador" and sector_of(member) in ("Estoque", "Salão"))
 
@@ -121,7 +127,7 @@ def perms(member: dict) -> dict:
     cs = cost_sectors(member)
     return {"full": full_view(member), "costs": cs == ALL or bool(cs), "cost_sectors": list(SECTORS) if cs == ALL else cs,
             "stock": is_stock(member), "op_sectors": op_sectors(member), "manage": member["role"] == "gerente",
-            "approve": member["role"] == "gerente", "ifood": can_ifood(member), "upload": can_upload(member),
+            "approve": member["role"] == "gerente", "ifood": can_ifood(member), "upload": can_upload(member), "notas": can_notas(member),
             "upload_kinds": ["*"] if upload_kinds(member) == ALL else upload_kinds(member), "print": member["role"] in ("gerente", "chefe")}
 
 

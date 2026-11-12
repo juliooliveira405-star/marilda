@@ -32,6 +32,7 @@ import { queryClient } from "@/lib/queryClient";
 import { useMe, useNotifications } from "@/lib/queries";
 import { toast } from "sonner";
 import type { Me } from "@/lib/types";
+import { InstallApp } from "@/components/InstallApp";
 import { CreditBadge, Skeleton } from "@/components/common";
 import { cn } from "@/lib/utils";
 
@@ -336,6 +337,7 @@ function Shell() {
         </div>
         <div className="flex items-center gap-3">
           <span className="hidden text-xs text-slate-500 sm:inline" data-testid="header-company">Locale POA</span>
+          <InstallApp />
           {role && role !== "pendente" && <NotificationBell />}
           <UserButton />
         </div>

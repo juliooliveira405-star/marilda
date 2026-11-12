@@ -18,6 +18,7 @@ class Perms(BaseModel):
     upload: bool = False
     upload_kinds: list[str] = []
     print: bool = False
+    notas: bool = False
 
 
 class TempSub(BaseModel):
@@ -612,3 +613,56 @@ class AuditRow(BaseModel):
     user: str
     action: str
     detail: str = ""
+
+
+# ---------- Conferência de nota ----------
+NOTA_STATUS = Literal["conferencia", "recebida_ok", "divergencia", "devolvida", "cancelada", "parcial"]
+ITEM_STATUS = Literal["pendente", "ok", "faltou", "sobrando", "danificado", "errado"]
+ANOTACAO = Literal["erro", "falta", "devolucao", "dano", "cancelada"]
+
+
+class NotaItem(BaseModel):
+    descricao: str
+    qtd: float = 0
+    um: str = ""
+    valor_unit: Optional[float] = None
+    valor_total: Optional[float] = None
+    item: Optional[str] = None
+    item_desc: str = ""
+    status: ITEM_STATUS = "pendente"
+    qtd_recebida: Optional[float] = None
+    obs: str = ""
+
+
+class Nota(BaseModel):
+    id: str
+    numero: str = ""
+    fornecedor: str = ""
+    data: Optional[str] = None
+    total: Optional[float] = None
+    setor: str = "Estoque"
+    status: NOTA_STATUS
+    anotacao: str = ""
+    anotacao_tipos: list[str] = []
+    itens: list[NotaItem]
+    criado_por: str = ""
+    conferido_por: str = ""
+    conferido_em: Optional[str] = None
+    entrada: bool = False
+    created_at: str
+
+
+class NotaItemIn(BaseModel):
+    index: int = Field(..., ge=0)
+    item: Optional[str] = None
+    status: ITEM_STATUS
+    qtd_recebida: Optional[float] = Field(None, ge=0)
+    obs: str = Field("", max_length=200)
+
+
+class NotaConfIn(BaseModel):
+    status: Literal["recebida_ok", "divergencia", "devolvida", "cancelada", "parcial"]
+    setor: Literal["Cozinha", "Bar", "Quiosque", "Salão", "Estoque"] = "Estoque"
+    anotacao: str = Field("", max_length=1000)
+    anotacao_tipos: list[ANOTACAO] = []
+    itens: list[NotaItemIn] = Field(..., max_length=300)
