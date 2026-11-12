@@ -102,7 +102,7 @@ function Brand() {
         M
       </div>
       <div>
-        <div className="font-heading text-base font-semibold leading-tight text-slate-50">Madrila ERP</div>
+        <div className="font-heading text-base font-semibold leading-tight text-slate-50">Madrila E.G.O</div>
         <div className="text-[11px] text-slate-500">CMV · Estoque · Compras</div>
       </div>
     </div>
